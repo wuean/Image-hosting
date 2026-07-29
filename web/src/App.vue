@@ -125,6 +125,8 @@ const userOptions = [
   { label: '退出登录', key: 'logout' }
 ]
 
+const GITHUB_REPO = 'https://github.com/wuean/Image-hosting'
+
 function onUserAction(key: string) {
   if (key === 'logout') logout()
   if (key === 'change-password') showPwd.value = true
@@ -210,8 +212,9 @@ async function submitPwd() {
             <div class="app-footer-inner">
               <span>© 2026 图床管理系统 · All rights reserved</span>
               <span class="footer-links">
-                <a href="#" @click.prevent>帮助</a>
-                <a href="#" @click.prevent>反馈</a>
+                <a :href="GITHUB_REPO" target="_blank" rel="noopener">帮助</a>
+                <a :href="GITHUB_REPO + '/issues'" target="_blank" rel="noopener">反馈</a>
+                <a :href="GITHUB_REPO + '#readme'" target="_blank" rel="noopener">文档</a>
               </span>
             </div>
           </footer>

@@ -247,3 +247,22 @@ SQLite，单文件 `server/data/imgbed.db`。核心表：
 - **R2 外链无法访问？** 需在 Cloudflare 绑定自定义域名或开启 `r2.dev`（有限速）。
 - **又拍云删除报错？** 删非空目录需递归处理，目前删除走适配器 `remove`。
 - **上传大文件内存暴涨？** 已采用 busboy 流式 + 临时文件方案，正常情况下不会占满内存。
+- **如何修改管理员账号和密码？** 初始管理员为 `admin` / `admin123`（服务器 `.env` 设了 `ADMIN_PASSWORD` 则为该值；仅首次初始化、库里无用户时生效）。
+  - **改密码**：登录后右上角头像 → 「修改密码」，旧密码填 `admin123`，新密码 ≥6 位保存；或 `POST /api/auth/change-password`（需旧密码，走当前登录 token）。
+  - **改账号（用户名）**：管理员 → 用户管理 → 找到 `admin` 行点「编辑」改用户名/邮箱。注意「停用/删除/重发激活」对管理员行禁用，但「编辑」可用。
+  - **忘记密码的兜底**：在服务器项目目录用项目同款 scrypt 算法直接改库（密码为加盐哈希，不能填明文）：
+    ```bash
+    cd /www/wwwroot/imgbed/server
+    node -e "
+    const crypto=require('crypto');
+    const Database=require('better-sqlite3');
+    const db=new Database('data/imgbed.db');
+    const np='你的新密码';
+    const salt=crypto.randomBytes(16).toString('hex');
+    const hash=crypto.scryptSync(np,salt,32).toString('hex');
+    db.prepare(\"UPDATE users SET password_hash=?, username='新管理员名' WHERE username='admin'\").run(salt+':'+hash);
+    console.log('已更新:', db.prepare('SELECT id,username,role FROM users WHERE role=?').get('admin'));
+    db.close();
+    "
+    ```
+    改完直接重新登录，无需重启。

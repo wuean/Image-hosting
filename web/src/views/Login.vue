@@ -6,6 +6,7 @@ import { api } from '../api'
 
 const router = useRouter()
 const message = useMessage()
+const GITHUB_REPO = 'https://github.com/wuean/Image-hosting'
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -116,6 +117,19 @@ async function login() {
     </div>
 
     <div v-if="isDefaultBg" class="login-credit">Photo by 哲风壁纸</div>
+
+    <a
+      class="login-github"
+      :href="GITHUB_REPO"
+      target="_blank"
+      rel="noopener"
+      title="在 GitHub 上查看项目"
+      aria-label="GitHub"
+    >
+      <svg viewBox="0 0 16 16" width="22" height="22" fill="currentColor" aria-hidden="true">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+      </svg>
+    </a>
   </div>
 </template>
 
@@ -254,12 +268,33 @@ async function login() {
 
 .login-credit {
   position: absolute;
-  right: 18px;
+  right: 62px;
   bottom: 14px;
   z-index: 2;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.login-github {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.25);
+  transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+.login-github:hover {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  transform: translateY(-2px);
 }
 
 @media (max-width: 540px) {
