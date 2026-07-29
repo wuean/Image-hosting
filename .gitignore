@@ -1,0 +1,7 @@
+node_modules/
+.npm-cache/
+dist/
+server/data/
+.env
+*.log
+.workbuddy/
