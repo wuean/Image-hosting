@@ -47,7 +47,7 @@ statsRoutes.get('/', (c) => {
   }
   perBucket.sort((a, b) => b.count - a.count)
 
-  // ---- 最近上传（跨可见桶，取最新 8 条，附带可访问外链）----
+  // ---- 最近上传（跨可见桶，取最新 12 条，附带可访问外链）----
   const ids = buckets.map((b) => b.id)
   let recent: any[] = []
   if (ids.length) {
@@ -57,7 +57,7 @@ statsRoutes.get('/', (c) => {
         `SELECT i.*, b.name AS bucket_name, b.type AS provider
          FROM images i JOIN buckets b ON b.id = i.bucket_id
          WHERE i.bucket_id IN (${placeholders})
-         ORDER BY i.id DESC LIMIT 8`
+         ORDER BY i.id DESC LIMIT 12`
       )
       .all(...ids) as any[]
     recent = rows.map((r) => {

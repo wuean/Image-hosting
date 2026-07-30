@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { NCard, NSelect, NTabs, NTabPane, NUpload, NUploadDragger, NButton, NSpace, NImage, NPagination, NEmpty, NSpin, NText, NCollapse, NCollapseItem, NSwitch, NSlider, NInputNumber, NInput, useMessage, useDialog } from 'naive-ui'
+import { NCard, NSelect, NTabs, NTabPane, NUpload, NUploadDragger, NButton, NSpace, NImage, NPagination, NEmpty, NSpin, NText, NCollapse, NCollapseItem, NSwitch, NSlider, NInputNumber, NInput, NCheckbox, useMessage, useDialog } from 'naive-ui'
 import { api } from '../api'
 
 const message = useMessage()
@@ -25,6 +25,47 @@ const browseItems = ref<any[]>([])
 const browseCursor = ref<string | undefined>()
 const browseLoading = ref(false)
 const browsePrefix = ref('')
+
+// 图片管理批量选择：存被选中的文件 key（按 key 维护，刷新后不丢）
+const selectedKeys = ref<string[]>([])
+function isSelected(key: string) {
+  return selectedKeys.value.includes(key)
+}
+function toggleSelect(key: string, checked: boolean) {
+  const i = selectedKeys.value.indexOf(key)
+  if (checked && i < 0) selectedKeys.value.push(key)
+  if (!checked && i >= 0) selectedKeys.value.splice(i, 1)
+}
+// 全选/取消全选：仅针对当前已加载的文件
+function toggleSelectAll(checked: boolean) {
+  const loaded = browseItems.value.map((b) => b.key)
+  if (checked) {
+    selectedKeys.value = Array.from(new Set([...selectedKeys.value, ...loaded]))
+  } else {
+    const set = new Set(loaded)
+    selectedKeys.value = selectedKeys.value.filter((k) => !set.has(k))
+  }
+}
+async function batchDelete() {
+  if (!selectedKeys.value.length) return
+  const keys = [...selectedKeys.value]
+  dialog.warning({
+    title: '批量删除文件',
+    content: `将从云端永久删除 ${keys.length} 个文件，此操作不可恢复，确定吗？`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await api.post('/api/images/delete', { bucketId: bucketId.value, keys })
+        message.success(`已删除 ${keys.length} 个文件`)
+        selectedKeys.value = []
+        await reloadBrowse()
+      } catch (e: any) {
+        message.error(e.message)
+      }
+    }
+  })
+}
 
 // 图片管理（直接浏览云端对象）：按上传时间（lastModified）降序排列，最新在最前
 const sortedBrowse = computed(() => {
@@ -361,18 +402,32 @@ onMounted(loadBuckets)
     </n-tabs>
 
     <div v-else style="margin-top: 8px">
-        <n-space style="margin-bottom: 12px">
+        <n-space align="center" style="margin-bottom: 12px">
           <n-button size="small" @click="reloadBrowse">刷新</n-button>
-          <n-text depth="3" style="font-size: 12px; line-height: 28px">直接列出云端桶内对象（含非本站上传的文件）</n-text>
+          <n-checkbox
+            :checked="browseItems.length > 0 && selectedKeys.length === browseItems.length"
+            :indeterminate="selectedKeys.length > 0 && selectedKeys.length < browseItems.length"
+            @update:checked="toggleSelectAll"
+          >全选当前</n-checkbox>
+          <n-text v-if="selectedKeys.length" depth="3" style="font-size: 12px">已选 {{ selectedKeys.length }} 项</n-text>
+          <n-button size="small" type="error" :disabled="!selectedKeys.length" @click="batchDelete">批量删除</n-button>
+          <n-text depth="3" style="font-size: 12px; line-height: 28px; margin-left: auto">直接列出云端桶内对象（含非本站上传的文件）</n-text>
         </n-space>
         <n-spin :show="browseLoading">
           <n-empty v-if="!browseItems.length && !browseLoading" description="桶内暂无文件" style="padding: 48px 0" />
           <div v-else style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px">
             <n-card v-for="it in sortedBrowse" :key="it.key" size="small">
-              <n-image v-if="IMG_EXT.test(it.key)" :src="it.url" width="100%" height="120" object-fit="cover" style="border-radius: 6px; width: 100%" />
-              <div v-else style="height: 120px; display: flex; align-items: center; justify-content: center; background: #f5f6fa; border-radius: 6px; color: #999">非图片文件</div>
+              <div style="position: relative" :style="{ outline: isSelected(it.key) ? '2px solid #2080f0' : 'none', outlineOffset: '-2px', borderRadius: '6px' }">
+                <n-checkbox
+                  :checked="isSelected(it.key)"
+                  @update:checked="(v: boolean) => toggleSelect(it.key, v)"
+                  style="position: absolute; top: 6px; left: 6px; z-index: 2; background: rgba(255,255,255,0.85); border-radius: 4px"
+                />
+                <n-image v-if="IMG_EXT.test(it.key)" :src="it.url" width="100%" height="120" object-fit="cover" style="border-radius: 6px; width: 100%" />
+                <div v-else style="height: 120px; display: flex; align-items: center; justify-content: center; background: #f5f6fa; border-radius: 6px; color: #999">非图片文件</div>
+              </div>
               <div style="font-size: 12px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" :title="it.key">{{ it.key }}</div>
-              <n-text depth="3" style="font-size: 11px">{{ fmtSize(it.size) }}</n-text>
+              <n-text depth="3" style="font-size: 11px">{{ fmtSize(it.size) }} · {{ it.lastModified?.slice(0, 16) || '未知时间' }}</n-text>
               <n-space size="small" style="margin-top: 6px">
                 <n-button size="tiny" @click="copyText(it.url, 'URL')">URL</n-button>
                 <n-button size="tiny" @click="copyText(`![](${it.url})`, 'Markdown')">MD</n-button>
