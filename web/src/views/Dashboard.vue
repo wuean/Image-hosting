@@ -83,6 +83,10 @@ async function copyText(text: string, label: string) {
   message.success(`${label}已复制`)
 }
 
+function htmlTag(url: string) {
+  return `<img src="${url}" alt="" />`
+}
+
 onMounted(async () => {
   try {
     data.value = await api.get('/api/stats')
@@ -209,6 +213,7 @@ onMounted(async () => {
                 <n-space size="small" class="recent-btns">
                   <n-button size="tiny" @click="copyText(r.url, 'URL')">URL</n-button>
                   <n-button size="tiny" @click="copyText(`![](${r.url})`, 'MD')">MD</n-button>
+                  <n-button size="tiny" @click="copyText(htmlTag(r.url), 'HTML')">HTML</n-button>
                 </n-space>
               </div>
             </div>

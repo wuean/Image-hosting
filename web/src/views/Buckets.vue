@@ -6,6 +6,7 @@ import { api } from '../api'
 const message = useMessage()
 const dialog = useDialog()
 const buckets = ref<any[]>([])
+const defaultBucketId = ref<number | null>(null)
 const loading = ref(false)
 const showModal = ref(false)
 const saving = ref(false)
@@ -204,10 +205,21 @@ const columns = [
   { title: '桶 / 服务', key: 'bucket', render: (row: any) => row.config.bucket || row.config.service || '-' },
   { title: '访问域名', key: 'domain', render: (row: any) => row.config.customDomain || '-' },
   {
-    title: '操作', key: 'actions', width: 220,
+    title: '操作', key: 'actions', width: 340,
     render: (row: any) =>
       h(NSpace, {}, {
         default: () => [
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: row.id === defaultBucketId.value ? 'primary' : 'default',
+              secondary: row.id === defaultBucketId.value,
+              disabled: row.id === defaultBucketId.value,
+              onClick: () => setDefault(row.id)
+            },
+            { default: () => (row.id === defaultBucketId.value ? '默认图床' : '设为默认') }
+          ),
           h(NButton, { size: 'small', onClick: () => testBucket(row) }, { default: () => '测试' }),
           h(NButton, { size: 'small', onClick: () => openEdit(row) }, { default: () => '编辑' }),
           h(NButton, { size: 'small', type: 'error', quaternary: true, onClick: () => removeBucket(row) }, { default: () => '删除' })
@@ -219,11 +231,26 @@ const columns = [
 async function load() {
   loading.value = true
   try {
-    buckets.value = await api.get('/api/buckets')
+    const [list, def] = await Promise.all([
+      api.get('/api/buckets'),
+      api.get('/api/buckets/default').catch(() => ({ defaultBucketId: null }))
+    ])
+    buckets.value = list
+    defaultBucketId.value = def.defaultBucketId ?? null
   } catch (e: any) {
     message.error(e.message)
   } finally {
     loading.value = false
+  }
+}
+
+async function setDefault(id: number) {
+  try {
+    await api.put('/api/buckets/default', { bucketId: id })
+    defaultBucketId.value = id
+    message.success('已设为默认图床')
+  } catch (e: any) {
+    message.error(e.message)
   }
 }
 

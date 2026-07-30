@@ -26,12 +26,28 @@ const browseCursor = ref<string | undefined>()
 const browseLoading = ref(false)
 const browsePrefix = ref('')
 
+// 图片管理（直接浏览云端对象）：按上传时间（lastModified）降序排列，最新在最前
+const sortedBrowse = computed(() => {
+  if (!browseItems.value.length) return []
+  return [...browseItems.value].sort((a: any, b: any) => {
+    const at = a.lastModified || ''
+    const bt = b.lastModified || ''
+    return bt.localeCompare(at)
+  })
+})
+
 const IMG_EXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i
 
 async function loadBuckets() {
-  buckets.value = await api.get('/api/buckets')
-  if (buckets.value.length && !bucketId.value) {
-    bucketId.value = buckets.value[0].id
+  const [list, def] = await Promise.all([
+    api.get('/api/buckets'),
+    api.get('/api/buckets/default').catch(() => ({ defaultBucketId: null }))
+  ])
+  buckets.value = list
+  if (list.length && !bucketId.value) {
+    const defId = def.defaultBucketId
+    // 优先使用默认图床；若默认桶不在当前用户桶列表中则回退到第一个
+    bucketId.value = defId && list.some((b: any) => b.id === defId) ? defId : list[0].id
     await refreshAll()
   }
 }
@@ -352,7 +368,7 @@ onMounted(loadBuckets)
         <n-spin :show="browseLoading">
           <n-empty v-if="!browseItems.length && !browseLoading" description="桶内暂无文件" style="padding: 48px 0" />
           <div v-else style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px">
-            <n-card v-for="it in browseItems" :key="it.key" size="small">
+            <n-card v-for="it in sortedBrowse" :key="it.key" size="small">
               <n-image v-if="IMG_EXT.test(it.key)" :src="it.url" width="100%" height="120" object-fit="cover" style="border-radius: 6px; width: 100%" />
               <div v-else style="height: 120px; display: flex; align-items: center; justify-content: center; background: #f5f6fa; border-radius: 6px; color: #999">非图片文件</div>
               <div style="font-size: 12px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" :title="it.key">{{ it.key }}</div>

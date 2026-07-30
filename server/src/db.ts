@@ -50,6 +50,7 @@ addCol('email', 'TEXT')
 addCol('is_active', 'INTEGER NOT NULL DEFAULT 0')
 addCol('activation_token', 'TEXT')
 addCol('activated_at', 'TEXT')
+addCol('default_bucket_id', 'INTEGER')
 // email 唯一（SQLite 唯一索引允许多个 NULL）
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)')
 

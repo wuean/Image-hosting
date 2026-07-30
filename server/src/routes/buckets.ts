@@ -38,6 +38,24 @@ export function getAccessibleBucket(id: number, me: JwtUser) {
   return { ...row, config: JSON.parse(decrypt(row.config_enc)), owned }
 }
 
+// 当前用户的默认图床（上传时自动选中，免每次手动选择）
+bucketRoutes.get('/default', (c) => {
+  const me = c.get('user') as JwtUser
+  const row = db.prepare('SELECT default_bucket_id FROM users WHERE id = ?').get(me.uid) as any
+  return c.json({ defaultBucketId: row?.default_bucket_id ?? null })
+})
+
+bucketRoutes.put('/default', async (c) => {
+  const me = c.get('user') as JwtUser
+  const { bucketId } = (await c.req.json().catch(() => ({}))) as { bucketId?: number }
+  if (!bucketId || typeof bucketId !== 'number') return c.json({ error: '请指定 bucketId' }, 400)
+  // 只能把自己拥有的桶设为默认，杜绝越权
+  const owned = db.prepare('SELECT id FROM buckets WHERE id = ? AND owner_id = ?').get(bucketId, me.uid)
+  if (!owned) return c.json({ error: '桶不存在或不属于你' }, 404)
+  db.prepare('UPDATE users SET default_bucket_id = ? WHERE id = ?').run(bucketId, me.uid)
+  return c.json({ ok: true, defaultBucketId: bucketId })
+})
+
 bucketRoutes.get('/', (c) => {
   const me = c.get('user') as JwtUser
   const rows =
