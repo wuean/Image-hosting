@@ -2,6 +2,10 @@
 
 一个自托管的 Web 图床管理系统。统一对接多家对象存储（Cloudflare R2、AWS S3/MinIO、阿里云 OSS、腾讯云 COS、七牛云 Kodo、又拍云 USS），支持多用户隔离、邮箱激活、管理后台、流式上传、暗黑主题等。适合个人或小团队自建图床。
 
+**演示站点**：https://imgbed.lefuo.com
+
+![22ccd8cf9ffb480f.webp](http://file.wuean.com/2026/07/22ccd8cf9ffb480f.webp)
+
 ## 功能特性
 
 - **多存储后端统一接入**：6 种存储类型，统一的上传 / 列表 / 删除 / 外链体验。
