@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, h } from 'vue'
-import { NCard, NButton, NDataTable, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NSpace, useMessage, useDialog } from 'naive-ui'
+import { NCard, NButton, NDataTable, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NSpace, NAlert, useMessage, useDialog } from 'naive-ui'
 import { api } from '../api'
 
 const message = useMessage()
@@ -121,6 +121,56 @@ function removeBucket(row: any) {
   })
 }
 
+const fileInput = ref<HTMLInputElement | null>(null)
+
+async function exportBuckets() {
+  try {
+    const data = await api.get('/api/buckets/export')
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `imgbed-buckets-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    message.success('桶设置已导出')
+  } catch (e: any) {
+    message.error(e.message)
+  }
+}
+
+function triggerImport() {
+  dialog.warning({
+    title: '导入桶设置',
+    content: '将从文件恢复存储桶配置。已存在的同名桶会被更新覆盖（含密钥），确定继续？',
+    positiveText: '继续导入',
+    negativeText: '取消',
+    onPositiveClick: () => fileInput.value?.click()
+  })
+}
+
+async function onFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    if (!data || !Array.isArray(data.buckets)) {
+      return message.error('文件格式不正确（缺少 buckets 数组）')
+    }
+    const res = await api.post('/api/buckets/import', { buckets: data.buckets })
+    message.success(`导入完成：新建 ${res.created} 个，更新 ${res.updated} 个，失败 ${res.failed} 个`)
+    await load()
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    input.value = ''
+  }
+}
+
 const typeTag: Record<string, string> = { r2: 'Cloudflare R2', s3: 'S3 兼容', 'aliyun-oss': '阿里云 OSS', 'tencent-cos': '腾讯云 COS', qiniu: '七牛云', upyun: '又拍云' }
 
 const columns = [
@@ -162,9 +212,19 @@ onMounted(load)
 <template>
   <n-card title="存储桶配置" :bordered="false">
     <template #header-extra>
-      <n-button type="primary" @click="openCreate">添加存储桶</n-button>
+      <n-space>
+        <n-button @click="exportBuckets">导出桶设置</n-button>
+        <n-button @click="triggerImport">导入桶设置</n-button>
+        <n-button type="primary" @click="openCreate">添加存储桶</n-button>
+      </n-space>
     </template>
+
+    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px">
+      导出文件包含存储桶的密钥（AccessKey / Secret 等），请妥善保管；导入会按名称更新已存在的桶配置。
+    </n-alert>
+
     <n-data-table :columns="columns" :data="buckets" :loading="loading" :bordered="false" />
+    <input ref="fileInput" type="file" accept="application/json,.json" style="display: none" @change="onFileChange" />
   </n-card>
 
   <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑存储桶' : '添加存储桶'" style="width: 520px">

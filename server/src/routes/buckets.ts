@@ -108,3 +108,71 @@ bucketRoutes.post('/:id/test', async (c) => {
     return c.json({ ok: false, error: e?.message || String(e) }, 400)
   }
 })
+
+// ---- 桶设置导入 / 导出 ----
+// 导出：把当前用户（或管理员全部）的桶配置以明文 JSON 返回，含解密后的密钥
+bucketRoutes.get('/export', (c) => {
+  const me = c.get('user') as JwtUser
+  const rows =
+    me.role === 'admin'
+      ? (db.prepare('SELECT * FROM buckets ORDER BY id').all() as any[])
+      : (db.prepare('SELECT * FROM buckets WHERE owner_id = ? ORDER BY id').all(me.uid) as any[])
+  const buckets = rows.map((r) => ({
+    name: r.name,
+    type: r.type,
+    keyPrefix: r.key_prefix,
+    config: JSON.parse(decrypt(r.config_enc))
+  }))
+  return c.json({
+    app: 'imgbed',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    exportedBy: me.username,
+    buckets
+  })
+})
+
+// 导入：逐桶处理，已存在的同名桶（同所有者）更新配置，否则新建；密钥重新加密入库
+bucketRoutes.post('/import', async (c) => {
+  const me = c.get('user') as JwtUser
+  const body = await c.req.json().catch(() => ({}))
+  const list = Array.isArray(body?.buckets) ? body.buckets : []
+  let created = 0
+  let updated = 0
+  let failed = 0
+  const errors: string[] = []
+  for (const item of list) {
+    const { name, type, config, keyPrefix } = item || {}
+    if (!name || !VALID_TYPES.includes(type) || !config || typeof config !== 'object') {
+      failed++
+      errors.push(`已跳过无效项：${name || '(无名)'}（类型或配置缺失）`)
+      continue
+    }
+    // 过滤占位符，避免把 "******" 当作真实密钥写入
+    const clean: any = {}
+    for (const [k, v] of Object.entries(config)) {
+      if (v === '******' || v === undefined || v === null) continue
+      clean[k] = v
+    }
+    const existing = db
+      .prepare('SELECT * FROM buckets WHERE owner_id = ? AND name = ?')
+      .get(me.uid, name) as any
+    if (existing) {
+      const merged = { ...JSON.parse(decrypt(existing.config_enc)) }
+      for (const [k, v] of Object.entries(clean)) merged[k] = v
+      db.prepare('UPDATE buckets SET type = ?, config_enc = ?, key_prefix = ? WHERE id = ?').run(
+        type,
+        encrypt(JSON.stringify(merged)),
+        keyPrefix ?? existing.key_prefix,
+        existing.id
+      )
+      updated++
+    } else {
+      db.prepare(
+        'INSERT INTO buckets (name, type, config_enc, key_prefix, owner_id) VALUES (?, ?, ?, ?, ?)'
+      ).run(name, type, encrypt(JSON.stringify(clean)), keyPrefix || '', me.uid)
+      created++
+    }
+  }
+  return c.json({ ok: true, created, updated, failed, errors })
+})
