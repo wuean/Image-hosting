@@ -1,7 +1,8 @@
 import qiniu from 'qiniu'
 import type { StorageAdapter, ListResult, QiniuConfig } from './types.js'
 import { joinUrl } from './types.js'
-import type { Readable } from 'node:stream'
+import { Readable } from 'node:stream'
+import { readFileSync } from 'node:fs'
 
 /** 七牛云 Kodo 适配器 */
 export class QiniuAdapter implements StorageAdapter {
@@ -33,9 +34,11 @@ export class QiniuAdapter implements StorageAdapter {
         if (info.statusCode !== 200) return reject(new Error(`七牛上传失败: ${info.statusCode} ${JSON.stringify(body2)}`))
         resolve()
       }
-      // 文件路径直接 put（七牛 SDK 支持 Buffer / 字符串路径 / 流），天然带长度
-      if (body instanceof Readable) formUploader.putStream(token, key, body, putExtra, cb)
-      else formUploader.put(token, key, body as any, putExtra, cb)
+      // 七牛 SDK 的 formUploader.put 会把字符串直接当文件内容发送（而非读取路径），
+      // 因此收到临时文件路径时必须先读成 Buffer 再上传；Readable 走 putStream。
+      const payload = typeof body === 'string' ? readFileSync(body) : body
+      if (payload instanceof Readable) formUploader.putStream(token, key, payload, putExtra, cb)
+      else formUploader.put(token, key, payload, putExtra, cb)
     })
   }
 

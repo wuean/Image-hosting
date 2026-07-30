@@ -1,9 +1,8 @@
 import upyun from 'upyun'
 import type { StorageAdapter, ListResult, UpyunConfig } from './types.js'
 import { joinUrl } from './types.js'
-import type { Readable } from 'node:stream'
+import { Readable } from 'node:stream'
 import { readFileSync } from 'node:fs'
-import type { Readable } from 'node:stream'
 
 /** 又拍云 USS 适配器 */
 export class UpyunAdapter implements StorageAdapter {
