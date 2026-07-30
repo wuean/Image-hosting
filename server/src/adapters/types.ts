@@ -42,6 +42,8 @@ export interface QiniuConfig {
   secretKey: string
   bucket: string
   customDomain: string
+  /** 存储区域，默认 z0（华东） */
+  zone?: string
 }
 
 export interface UpyunConfig {

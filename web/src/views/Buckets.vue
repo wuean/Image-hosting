@@ -20,7 +20,15 @@ const typeOptions = [
   { label: '又拍云 USS', value: 'upyun' }
 ]
 
-const fieldDefs: Record<string, { key: string; label: string; placeholder?: string; secret?: boolean }[]> = {
+type FieldItem = {
+  key: string
+  label: string
+  placeholder?: string
+  secret?: boolean
+  type?: 'input' | 'select'
+  options?: { label: string; value: string }[]
+}
+const fieldDefs: Record<string, FieldItem[]> = {
   r2: [
     { key: 'endpoint', label: 'Endpoint', placeholder: 'https://<账户ID>.r2.cloudflarestorage.com' },
     { key: 'bucket', label: '桶名称' },
@@ -51,6 +59,19 @@ const fieldDefs: Record<string, { key: string; label: string; placeholder?: stri
     { key: 'customDomain', label: '访问域名', placeholder: '如 https://img.example.com（COS 绑定的自定义域名/CDN）' }
   ],
   qiniu: [
+    {
+      key: 'zone',
+      label: '存储区域',
+      type: 'select',
+      placeholder: '请选择 bucket 所在区域',
+      options: [
+        { label: '华东 z0', value: 'z0' },
+        { label: '华北 z1', value: 'z1' },
+        { label: '华南 z2', value: 'z2' },
+        { label: '北美 na0', value: 'na0' },
+        { label: '东南亚 as0', value: 'as0' }
+      ]
+    },
     { key: 'accessKey', label: 'AccessKey' },
     { key: 'secretKey', label: 'SecretKey', secret: true },
     { key: 'bucket', label: '空间名称' },
@@ -236,7 +257,15 @@ onMounted(load)
         <n-input v-model:value="form.name" placeholder="随便起，如：我的R2图床" />
       </n-form-item>
       <n-form-item v-for="f in currentFields" :key="f.key" :label="f.label">
+        <n-select
+          v-if="f.type === 'select'"
+          v-model:value="form.config[f.key]"
+          :options="f.options"
+          :placeholder="f.placeholder || '请选择'"
+          clearable
+        />
         <n-input
+          v-else
           v-model:value="form.config[f.key]"
           :type="f.secret ? 'password' : 'text'"
           show-password-on="click"

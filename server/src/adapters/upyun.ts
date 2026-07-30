@@ -2,11 +2,8 @@ import upyun from 'upyun'
 import type { StorageAdapter, ListResult, UpyunConfig } from './types.js'
 import { joinUrl } from './types.js'
 import type { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
-import { createWriteStream, unlinkSync } from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import crypto from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import type { Readable } from 'node:stream'
 
 /** 又拍云 USS 适配器 */
 export class UpyunAdapter implements StorageAdapter {
@@ -18,26 +15,21 @@ export class UpyunAdapter implements StorageAdapter {
   }
 
   async upload(key: string, body: Buffer | Readable | string, mime: string) {
-    let tmp: string | null = null
-    let content: Buffer | string
+    // upyun SDK 的 putFile 会把字符串参数直接当 body 内容发送，而不是读取文件路径。
+    // 因此当收到临时文件路径时，必须先在服务端读取为 Buffer，再交给 SDK。
+    let content: Buffer | Readable
     if (body instanceof Readable) {
-      tmp = path.join(os.tmpdir(), `upyun-${crypto.randomBytes(8).toString('hex')}`)
-      await pipeline(body, createWriteStream(tmp))
-      content = tmp
+      content = body
+    } else if (typeof body === 'string') {
+      content = readFileSync(body)
     } else {
       content = body
     }
     try {
       const ok = await this.client.putFile(`/${key}`, content, { 'Content-Type': mime })
       if (!ok) throw new Error('又拍云上传失败')
-    } finally {
-      if (tmp) {
-        try {
-          unlinkSync(tmp)
-        } catch {
-          /* 忽略清理失败 */
-        }
-      }
+    } catch (e: any) {
+      throw new Error('又拍云上传失败: ' + (e?.message || e))
     }
   }
 

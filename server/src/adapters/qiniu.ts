@@ -11,6 +11,14 @@ export class QiniuAdapter implements StorageAdapter {
   constructor(private cfg: QiniuConfig) {
     this.mac = new qiniu.auth.digest.Mac(cfg.accessKey, cfg.secretKey)
     const config = new qiniu.conf.Config()
+    const zoneMap: Record<string, any> = {
+      z0: qiniu.zone.Zone_z0,
+      z1: qiniu.zone.Zone_z1,
+      z2: qiniu.zone.Zone_z2,
+      na0: qiniu.zone.Zone_na0,
+      as0: qiniu.zone.Zone_as0
+    }
+    if (cfg.zone && zoneMap[cfg.zone]) config.zone = zoneMap[cfg.zone]
     this.bucketManager = new qiniu.rs.BucketManager(this.mac, config)
   }
 
