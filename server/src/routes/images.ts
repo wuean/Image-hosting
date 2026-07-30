@@ -24,6 +24,33 @@ function genKey(prefix: string, originalName: string): string {
   return `${p}${yyyy}/${mm}/${base}${ext}`
 }
 
+// 允许「在浏览器内联渲染」的扩展名白名单：仅图片，刻意排除 svg / html / js 等可执行类型
+const INLINE_IMAGE_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  jfif: 'image/jpeg'
+}
+
+/**
+ * 安全归一化 Content-Type：完全忽略客户端声明的 MIME，仅依据文件扩展名判定。
+ * - 白名单内的图片扩展名 → 对应的 image/*（可内联渲染、且绝不会执行脚本）
+ * - 其余（svg / html / js / pdf / zip 等）→ 一律 application/octet-stream，浏览器按二进制下载，
+ *   杜绝存储型 XSS（text/html 内联执行）与内容伪造；即使把 .jpg 内容塞成 HTML 也因类型被锁为
+ *   图片而不会触发脚本执行。
+ */
+function safeContentType(filename: string): string {
+  const ext = (path.extname(filename) || '').toLowerCase().replace(/^\./, '')
+  return INLINE_IMAGE_MIME[ext] || 'application/octet-stream'
+}
+
 /** 中转上传（流式转发：请求体边收边传，避免大文件占满内存）。仅桶主可上传到自己的桶。 */
 imageRoutes.post('/upload', async (c) => {
   const me = c.get('user') as JwtUser
@@ -40,14 +67,28 @@ imageRoutes.post('/upload', async (c) => {
   if (!rawBody) return c.json({ error: '未收到请求体' }, 400)
 
   const adapter = createAdapter(bucket.type, bucket.config)
-  const busboy = Busboy({ headers: { 'content-type': contentType } })
+  // 服务端硬性限制：防止存储滥用 / DoS
+  const busboy = Busboy({
+    headers: { 'content-type': contentType },
+    limits: {
+      fileSize: 20 * 1024 * 1024, // 单文件 20MB
+      files: 10, // 单次最多 10 个文件
+      parts: 20,
+      fields: 10
+    }
+  })
+  let limitHit = false
+  busboy.on('limit', () => {
+    limitHit = true
+  })
   const results: any[] = []
   const errors: string[] = []
   const tasks: Promise<void>[] = []
 
   busboy.on('file', (_field, fileStream, info) => {
     const filename = info.filename || `file-${Date.now()}`
-    const mime = info.mimeType || 'application/octet-stream'
+    // 安全：不信任客户端声明的 MIME，按扩展名归一化（防存储型 XSS / 内容伪造）
+    const mime = safeContentType(filename)
     const key = genKey(bucket.key_prefix, filename)
     const tmp = path.join(os.tmpdir(), `imgbed-${crypto.randomBytes(8).toString('hex')}`)
     let size = 0
@@ -62,7 +103,11 @@ imageRoutes.post('/upload', async (c) => {
     // 流式写入临时文件（内存只占一个分块），再用文件句柄上传——彻底避免大文件占满内存
     tasks.push(
       pipeline(src, createWriteStream(tmp))
-        .then(() => adapter.upload(key, tmp, mime))
+        .then(() => {
+          // 触发了大小/数量限制则跳过云端上传，避免传半截文件
+          if (limitHit) throw new Error('文件超过大小或数量限制')
+          return adapter.upload(key, tmp, mime)
+        })
         .then(() => {
           db.prepare(
             'INSERT INTO images (bucket_id, user_id, key, original_name, size, mime) VALUES (?, ?, ?, ?, ?, ?)'
@@ -104,6 +149,8 @@ imageRoutes.post('/upload', async (c) => {
   // 等所有文件的云端上传完成（流式转发不保证 busboy.finish 时云端已写完）
   await Promise.allSettled(tasks)
 
+  // 触达大小/数量上限但本批没有其它错误时，给出明确提示
+  if (limitHit && !errors.length) errors.push('上传超过大小或数量限制（单文件 ≤20MB，单次 ≤10 个）')
   if (errors.length) {
     return c.json({ files: results, errors }, results.length ? 207 : 400)
   }
