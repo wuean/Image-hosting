@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { NCard, NForm, NFormItem, NInput, NButton, useMessage } from 'naive-ui'
 import { api } from '../api'
+import { setCurrentUser } from '../user'
 
 const router = useRouter()
 const message = useMessage()
@@ -23,8 +24,6 @@ const logoDisplay = computed(() => {
 
 // 登录背景：后台设置了则用设置值，否则回退到系统默认壁纸
 const loginBg = computed(() => loginBgUrl.value || '/login-bg.png')
-// 是否为系统默认壁纸（用于决定是否显示版权署名）
-const isDefaultBg = computed(() => !loginBgUrl.value)
 
 onMounted(async () => {
   try {
@@ -46,7 +45,7 @@ async function login() {
   try {
     const res = await api.post('/api/auth/login', { username: username.value, password: password.value })
     localStorage.setItem('token', res.token)
-    localStorage.setItem('user', JSON.stringify(res.user))
+    setCurrentUser(res.user)
     router.push('/images')
   } catch (e: any) {
     message.error(e.message)
@@ -115,8 +114,6 @@ async function login() {
         <router-link to="/register">立即注册</router-link>
       </div>
     </div>
-
-    <div v-if="isDefaultBg" class="login-credit">Photo by 哲风壁纸</div>
 
     <a
       class="login-github"
@@ -264,16 +261,6 @@ async function login() {
 
 .login-footer a:hover {
   text-decoration: underline;
-}
-
-.login-credit {
-  position: absolute;
-  right: 62px;
-  bottom: 14px;
-  z-index: 2;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .login-github {

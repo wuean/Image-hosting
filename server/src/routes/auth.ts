@@ -17,7 +17,18 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: '账号未激活，请先激活注册邮箱后再登录', code: 'INACTIVE' }, 401)
   }
   const token = await signToken(user)
-  return c.json({ token, user: { id: user.id, username: user.username, role: user.role } })
+  return c.json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      email: user.email,
+      nickname: user.nickname,
+      created_at: user.created_at,
+      is_active: user.is_active
+    }
+  })
 })
 
 authRoutes.post('/register', async (c) => {
@@ -75,12 +86,58 @@ authRoutes.post('/change-password', authGuard, async (c) => {
   return c.json({ ok: true })
 })
 
+// 当前登录用户完整资料（供个人资料页读取）
+authRoutes.get('/me', authGuard, (c) => {
+  const me = c.get('user') as JwtUser
+  const user = db
+    .prepare(
+      'SELECT id, username, email, nickname, role, created_at, is_active FROM users WHERE id = ?'
+    )
+    .get(me.uid) as any
+  if (!user) return c.json({ error: '用户不存在' }, 404)
+  return c.json({ user })
+})
+
+// 更新当前用户的昵称 + 邮箱（不改密码/激活状态）
+authRoutes.put('/profile', authGuard, async (c) => {
+  const me = c.get('user') as JwtUser
+  const { nickname, email } = await c.req.json<{ nickname?: string; email?: string }>()
+  const current = db.prepare('SELECT * FROM users WHERE id = ?').get(me.uid) as any
+  if (!current) return c.json({ error: '用户不存在' }, 404)
+
+  let nick = current.nickname
+  if (nickname !== undefined) {
+    const n = (nickname || '').trim()
+    if (n.length > 32) return c.json({ error: '昵称最多 32 个字符' }, 400)
+    nick = n
+  }
+
+  let mail = current.email
+  if (email !== undefined) {
+    const m = (email || '').trim().toLowerCase()
+    if (m && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m)) {
+      return c.json({ error: '邮箱格式不正确' }, 400)
+    }
+    if (m) {
+      const dup = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(m, me.uid)
+      if (dup) return c.json({ error: '该邮箱已被其他账号使用' }, 409)
+    }
+    mail = m || null
+  }
+
+  db.prepare('UPDATE users SET nickname = ?, email = ? WHERE id = ?').run(nick, mail, me.uid)
+  const updated = db
+    .prepare('SELECT id, username, email, nickname, role, created_at, is_active FROM users WHERE id = ?')
+    .get(me.uid) as any
+  return c.json({ ok: true, user: updated })
+})
+
 // ---- 管理员用户管理 ----
 authRoutes.use('/admin/*', authGuard, requireAdmin)
 authRoutes.get('/admin/users', (c) => {
   const rows = db
     .prepare(
-      `SELECT u.id, u.username, u.email, u.role, u.is_active, u.created_at, u.activated_at,
+      `SELECT u.id, u.username, u.email, u.nickname, u.role, u.is_active, u.created_at, u.activated_at,
               (SELECT COUNT(*) FROM buckets b WHERE b.owner_id = u.id) AS bucket_count
        FROM users u ORDER BY u.id`
     )

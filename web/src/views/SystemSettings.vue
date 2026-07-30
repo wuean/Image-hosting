@@ -102,135 +102,162 @@ onMounted(load)
 
 <template>
   <div>
-    <n-card title="系统设置" :bordered="false" :loading="loading">
-      <template #header-extra>
-        <span style="font-size: 12px; color: var(--text-3)">仅管理员可见 · 影响登录页与顶部导航 branding</span>
-      </template>
+    <!-- 上排：设置表单 + 预览并排 -->
+    <div class="settings-row">
+      <n-card class="settings-card" title="系统设置" :bordered="false" :loading="loading">
+        <template #header-extra>
+          <span style="font-size: 12px; color: var(--text-3)">仅管理员可见 · 影响登录页与顶部导航 branding</span>
+        </template>
 
-      <n-form label-placement="left" label-width="100" style="max-width: 560px">
-        <n-form-item label="站点名称">
-          <n-input v-model:value="form.site_name" placeholder="图床管理" maxlength="30" />
-        </n-form-item>
+        <n-form label-placement="left" label-width="100">
+          <n-form-item label="站点名称">
+            <n-input v-model:value="form.site_name" placeholder="图床管理" maxlength="30" />
+          </n-form-item>
 
-        <n-form-item label="LOGO 文字">
-          <n-input v-model:value="form.logo_text" placeholder="图" maxlength="8" />
-          <template #feedback>
-            <span style="color: var(--text-3)">未上传 LOGO 图片时，显示此处文字（通常 1-2 个字）</span>
-          </template>
-        </n-form-item>
+          <n-form-item label="LOGO 文字">
+            <n-input v-model:value="form.logo_text" placeholder="图" maxlength="8" />
+            <template #feedback>
+              <span style="color: var(--text-3)">未上传 LOGO 图片时，显示此处文字（通常 1-2 个字）</span>
+            </template>
+          </n-form-item>
 
-        <n-form-item label="LOGO 图片">
-          <n-input v-model:value="form.logo_url" placeholder="https://example.com/logo.png" />
-          <template #feedback>
-            <span style="color: var(--text-3)">留空则使用 LOGO 文字；建议上传 1:1 的透明 PNG</span>
-          </template>
-        </n-form-item>
+          <n-form-item label="LOGO 图片">
+            <n-input v-model:value="form.logo_url" placeholder="https://example.com/logo.png" />
+            <template #feedback>
+              <span style="color: var(--text-3)">留空则使用 LOGO 文字；建议上传 1:1 的透明 PNG</span>
+            </template>
+          </n-form-item>
 
-        <n-form-item label="登录背景图">
-          <n-input v-model:value="form.login_bg_url" placeholder="留空则使用默认壁纸" />
-          <template #feedback>
-            <span style="color: var(--text-3)">填写图片 URL（如 CDN 地址）；留空时登录页显示系统默认壁纸</span>
-          </template>
-        </n-form-item>
+          <n-form-item label="登录背景图">
+            <n-input v-model:value="form.login_bg_url" placeholder="留空则使用默认壁纸" />
+            <template #feedback>
+              <span style="color: var(--text-3)">填写图片 URL（如 CDN 地址）；留空时登录页显示系统默认壁纸</span>
+            </template>
+          </n-form-item>
 
-        <n-form-item>
-          <n-space>
-            <n-button type="primary" :loading="saving" @click="save">保存设置</n-button>
-            <n-button @click="load">重置</n-button>
-          </n-space>
-        </n-form-item>
-      </n-form>
+          <n-form-item>
+            <n-space>
+              <n-button type="primary" :loading="saving" @click="save">保存设置</n-button>
+              <n-button @click="load">重置</n-button>
+            </n-space>
+          </n-form-item>
+        </n-form>
+      </n-card>
 
-      <div class="preview-section">
-        <div class="preview-label">效果预览</div>
-        <div class="preview-box">
-          <div class="preview-logo">
-            <img v-if="form.logo_url" :src="form.logo_url" alt="logo" />
-            <span v-else>{{ form.logo_text || '图' }}</span>
+      <n-card class="preview-card" title="预览" :bordered="false">
+        <div class="preview-section">
+          <div class="preview-label">LOGO 与站点名称</div>
+          <div class="preview-box">
+            <div class="preview-logo">
+              <img v-if="form.logo_url" :src="form.logo_url" alt="logo" />
+              <span v-else>{{ form.logo_text || '图' }}</span>
+            </div>
+            <div class="preview-name">{{ form.site_name }}</div>
           </div>
-          <div class="preview-name">{{ form.site_name }}</div>
+
+          <div class="preview-bg-label">登录背景</div>
+          <div class="preview-bg">
+            <img :src="form.login_bg_url || '/login-bg.png'" alt="login background" />
+            <span v-if="!form.login_bg_url" class="preview-bg-default">当前为默认壁纸</span>
+          </div>
         </div>
+      </n-card>
+    </div>
 
-        <div class="preview-bg-label">登录背景预览</div>
-        <div class="preview-bg">
-          <img :src="form.login_bg_url || '/login-bg.png'" alt="login background" />
-          <span v-if="!form.login_bg_url" class="preview-bg-default">当前为默认壁纸</span>
+    <!-- 下排：邮件配置 + 发送测试并排 -->
+    <div class="settings-row" style="margin-top: 16px">
+      <n-card class="settings-card" title="邮件服务 (SMTP)" :bordered="false">
+        <template #header-extra>
+          <span style="font-size: 12px; color: var(--text-3)">用于发送账号激活邮件；密码以加密形式存储</span>
+        </template>
+
+        <n-form label-placement="left" label-width="110">
+          <n-form-item label="SMTP 服务器">
+            <n-input v-model:value="form.smtp_host" placeholder="如 smtp.qq.com" />
+          </n-form-item>
+
+          <n-form-item label="端口">
+            <n-input v-model:value="form.smtp_port" placeholder="465" style="max-width: 160px" />
+            <template #feedback>
+              <span style="color: var(--text-3)">通常为 465（SSL）或 587（STARTTLS）</span>
+            </template>
+          </n-form-item>
+
+          <n-form-item label="加密连接">
+            <n-switch v-model:value="form.smtp_secure">
+              <template #checked>SSL/TLS</template>
+              <template #unchecked>关闭</template>
+            </n-switch>
+            <template #feedback>
+              <span style="color: var(--text-3)">端口 465 一般开启；587 视服务商要求</span>
+            </template>
+          </n-form-item>
+
+          <n-form-item label="用户名">
+            <n-input v-model:value="form.smtp_user" placeholder="通常为邮箱地址或发信账号" />
+          </n-form-item>
+
+          <n-form-item label="密码 / 授权码">
+            <n-input
+              v-model:value="form.smtp_pass"
+              type="password"
+              show-password-on="click"
+              placeholder="QQ/163 等需用授权码，非登录密码"
+            />
+          </n-form-item>
+
+          <n-form-item label="发件人地址">
+            <n-input v-model:value="form.smtp_from" placeholder="如 no-reply@example.com（留空则用用户名）" />
+          </n-form-item>
+
+          <n-form-item>
+            <n-space>
+              <n-button type="primary" :loading="saving" @click="save">保存设置</n-button>
+              <n-button @click="load">重置</n-button>
+            </n-space>
+          </n-form-item>
+        </n-form>
+      </n-card>
+
+      <n-card class="preview-card" title="发送测试" :bordered="false">
+        <div class="preview-section">
+          <div class="preview-label">验证邮件配置</div>
+          <p class="test-tip">保存 SMTP 配置后，可发送一封测试邮件验证是否可用。</p>
+          <n-form label-placement="top">
+            <n-form-item label="接收测试的邮箱地址">
+              <n-input v-model:value="testTo" placeholder="如 me@example.com" />
+            </n-form-item>
+            <n-form-item>
+              <n-button type="primary" :loading="testing" @click="sendTest">发送测试</n-button>
+            </n-form-item>
+          </n-form>
         </div>
-      </div>
-    </n-card>
-
-    <n-card title="邮件服务 (SMTP)" :bordered="false" style="margin-top: 16px">
-      <template #header-extra>
-        <span style="font-size: 12px; color: var(--text-3)">用于发送账号激活邮件；密码以加密形式存储</span>
-      </template>
-
-      <n-form label-placement="left" label-width="110" style="max-width: 560px">
-        <n-form-item label="SMTP 服务器">
-          <n-input v-model:value="form.smtp_host" placeholder="如 smtp.qq.com" />
-        </n-form-item>
-
-        <n-form-item label="端口">
-          <n-input v-model:value="form.smtp_port" placeholder="465" style="max-width: 160px" />
-          <template #feedback>
-            <span style="color: var(--text-3)">通常为 465（SSL）或 587（STARTTLS）</span>
-          </template>
-        </n-form-item>
-
-        <n-form-item label="加密连接">
-          <n-switch v-model:value="form.smtp_secure">
-            <template #checked>SSL/TLS</template>
-            <template #unchecked>关闭</template>
-          </n-switch>
-          <template #feedback>
-            <span style="color: var(--text-3)">端口 465 一般开启；587 视服务商要求</span>
-          </template>
-        </n-form-item>
-
-        <n-form-item label="用户名">
-          <n-input v-model:value="form.smtp_user" placeholder="通常为邮箱地址或发信账号" />
-        </n-form-item>
-
-        <n-form-item label="密码 / 授权码">
-          <n-input
-            v-model:value="form.smtp_pass"
-            type="password"
-            show-password-on="click"
-            placeholder="QQ/163 等需用授权码，非登录密码"
-          />
-        </n-form-item>
-
-        <n-form-item label="发件人地址">
-          <n-input v-model:value="form.smtp_from" placeholder="如 no-reply@example.com（留空则用用户名）" />
-        </n-form-item>
-
-        <n-form-item>
-          <n-space>
-            <n-button type="primary" :loading="saving" @click="save">保存设置</n-button>
-            <n-button @click="load">重置</n-button>
-          </n-space>
-        </n-form-item>
-
-        <n-divider />
-
-        <n-form-item label="发送测试邮件">
-          <n-space>
-            <n-input v-model:value="testTo" placeholder="接收测试的邮箱地址" style="width: 260px" />
-            <n-button :loading="testing" @click="sendTest">发送测试</n-button>
-          </n-space>
-          <template #feedback>
-            <span style="color: var(--text-3)">保存 SMTP 配置后，可发送一封测试邮件验证是否可用</span>
-          </template>
-        </n-form-item>
-      </n-form>
-    </n-card>
+      </n-card>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.settings-card,
+.preview-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
 .preview-section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px dashed var(--border);
+  padding-top: 4px;
+}
+.test-tip {
+  font-size: 13px;
+  color: var(--text-3);
+  line-height: 1.6;
+  margin: 0 0 16px;
 }
 .preview-label {
   font-size: 14px;
@@ -279,12 +306,17 @@ onMounted(load)
 .preview-bg {
   position: relative;
   width: 100%;
-  max-width: 560px;
+  max-width: 100%;
   height: 180px;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--bg-page);
+}
+@media (max-width: 860px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+  }
 }
 .preview-bg img {
   width: 100%;

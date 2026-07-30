@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NConfigProvider,
@@ -20,6 +20,7 @@ import {
   darkTheme
 } from 'naive-ui'
 import { api } from './api'
+import { currentUser, displayName, setCurrentUser } from './user'
 
 // ---- 暗黑主题（支持跟随系统） ----
 const THEME_KEY = 'theme-dark'
@@ -80,21 +81,8 @@ async function loadSettings() {
 }
 onMounted(loadSettings)
 
-function loadUser() {
-  try {
-    const raw = localStorage.getItem('user')
-    if (!raw || raw === 'undefined' || raw === 'null') return { username: '游客', role: 'user' }
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return { username: '游客', role: 'user' }
-    return { username: parsed.username || '用户', role: parsed.role || 'user' }
-  } catch {
-    localStorage.removeItem('user')
-    return { username: '游客', role: 'user' }
-  }
-}
-const user = ref(loadUser())
-watch(() => route.path, () => { user.value = loadUser() })
-const isAdmin = computed(() => user.value.role === 'admin')
+const user = currentUser
+const isAdmin = computed(() => user.value?.role === 'admin')
 
 const menuOptions = computed(() => {
   const base = [
@@ -116,12 +104,12 @@ function onMenu(key: string) {
 
 function logout() {
   localStorage.removeItem('token')
-  localStorage.removeItem('user')
+  setCurrentUser(null)
   router.push('/login')
 }
 
 const userOptions = [
-  { label: '修改密码', key: 'change-password' },
+  { label: '个人资料', key: 'profile' },
   { label: '退出登录', key: 'logout' }
 ]
 
@@ -129,26 +117,7 @@ const GITHUB_REPO = 'https://github.com/wuean/Image-hosting'
 
 function onUserAction(key: string) {
   if (key === 'logout') logout()
-  if (key === 'change-password') showPwd.value = true
-}
-
-// ---- 修改密码弹窗 ----
-const showPwd = ref(false)
-const pwdForm = ref({ oldPassword: '', newPassword: '' })
-const pwdLoading = ref(false)
-async function submitPwd() {
-  if (!pwdForm.value.oldPassword || !pwdForm.value.newPassword) return message.warning('请填写完整')
-  pwdLoading.value = true
-  try {
-    await api.post('/api/auth/change-password', pwdForm.value)
-    message.success('密码已修改')
-    showPwd.value = false
-    pwdForm.value = { oldPassword: '', newPassword: '' }
-  } catch (e: any) {
-    message.error(e.message)
-  } finally {
-    pwdLoading.value = false
-  }
+  if (key === 'profile') router.push('/profile')
 }
 </script>
 
@@ -191,8 +160,8 @@ async function submitPwd() {
                 <n-dropdown :options="userOptions" @select="onUserAction">
                   <n-button quaternary size="small" class="user-btn">
                     <div class="user-profile">
-                      <n-avatar round size="small">{{ (user.username || '?').charAt(0).toUpperCase() }}</n-avatar>
-                      <span class="user-name">{{ user.username }}</span>
+                      <n-avatar round size="small">{{ displayName(user).charAt(0).toUpperCase() }}</n-avatar>
+                      <span class="user-name">{{ displayName(user) }}</span>
                       <span v-if="isAdmin" class="role-tag">管理员</span>
                       <span class="user-arrow">▾</span>
                     </div>
@@ -220,22 +189,6 @@ async function submitPwd() {
           </footer>
         </div>
 
-        <n-modal v-model:show="showPwd" preset="card" title="修改密码" style="width: 420px">
-          <n-form label-placement="left" label-width="90">
-            <n-form-item label="原密码">
-              <n-input v-model:value="pwdForm.oldPassword" type="password" show-password-on="click" />
-            </n-form-item>
-            <n-form-item label="新密码">
-              <n-input v-model:value="pwdForm.newPassword" type="password" show-password-on="click" placeholder="至少 6 位" />
-            </n-form-item>
-          </n-form>
-          <template #footer>
-            <n-space justify="end">
-              <n-button @click="showPwd = false">取消</n-button>
-              <n-button type="primary" :loading="pwdLoading" @click="submitPwd">保存</n-button>
-            </n-space>
-          </template>
-        </n-modal>
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>

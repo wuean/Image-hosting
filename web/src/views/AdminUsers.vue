@@ -109,6 +109,7 @@ function removeUser(row: any) {
 const columns = [
   { title: 'ID', key: 'id', width: 60 },
   { title: '用户名', key: 'username' },
+  { title: '昵称', key: 'nickname', render: (r: any) => r.nickname || '-' },
   { title: '邮箱', key: 'email', render: (r: any) => r.email || '-' },
   {
     title: '角色', key: 'role', width: 90,

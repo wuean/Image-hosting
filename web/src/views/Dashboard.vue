@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NSpace, NEmpty, NSpin, NImage, NText, useMessage } from 'naive-ui'
 import { api } from '../api'
+import { displayName } from '../user'
 
 const router = useRouter()
 const message = useMessage()
@@ -34,17 +35,7 @@ const STAT_ICONS: Record<string, string> = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg>'
 }
 
-function loadUser() {
-  try {
-    const raw = localStorage.getItem('user')
-    if (!raw || raw === 'undefined' || raw === 'null') return null
-    const p = JSON.parse(raw)
-    return p && typeof p === 'object' ? p : null
-  } catch {
-    return null
-  }
-}
-const username = computed(() => loadUser()?.username || '用户')
+const username = computed(() => displayName())
 
 function fmtSize(n: number) {
   if (!n) return '0 B'

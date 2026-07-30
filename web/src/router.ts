@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: '/images/upload', component: () => import('./views/Images.vue') },
     { path: '/images/manage', component: () => import('./views/Images.vue') },
     { path: '/buckets', component: () => import('./views/Buckets.vue') },
+    { path: '/profile', component: () => import('./views/Profile.vue') },
     { path: '/admin/users', component: () => import('./views/AdminUsers.vue') },
     { path: '/admin/settings', component: () => import('./views/SystemSettings.vue') }
   ]
