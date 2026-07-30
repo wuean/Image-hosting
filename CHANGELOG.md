@@ -2,11 +2,11 @@
 
 本项目所有功能性变更的汇总记录，用于版本管理与快速回溯。
 格式参考 [Keep a Changelog](https://keepachangelog.com/)，条目按时间倒序排列。
-状态标记：`已提交` = 已 git commit；`未提交` = 还在工作区（Working Tree），等待 commit。
+状态标记：`已发布` = 已推送到远程 `main` 分支。
 
 ---
 
-## 本期未提交（Working Tree）· 2026-07-29 ~ 07-30
+## 已发布 · 2026-07-29 ~ 07-30（commit `d649fad`）
 
 > 涉及文件：`server/src/db.ts`、`server/src/routes/auth.ts`、`web/src/user.ts`(新)、
 > `web/src/views/Profile.vue`(新)、`web/src/App.vue`、`web/src/router.ts`、
@@ -52,7 +52,7 @@
 
 ---
 
-## 已提交（远程领先 4 个 commit）· 2026-07-28 ~ 07-30
+## 已发布 · 2026-07-28 ~ 07-30
 
 ### 修复
 
