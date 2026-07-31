@@ -207,10 +207,10 @@ const settings = ref({
 })
 
 const renameOptions = [
-  { label: '原文件名', key: 'original' },
-  { label: '随机名', key: 'random' },
-  { label: '时间戳名', key: 'timestamp' },
-  { label: '自定义前缀', key: 'prefix' }
+  { label: '原文件名', value: 'original' },
+  { label: '随机名', value: 'random' },
+  { label: '时间戳名', value: 'timestamp' },
+  { label: '自定义前缀', value: 'prefix' }
 ]
 
 const RASTER_EXT = ['png', 'jpg', 'jpeg', 'bmp', 'webp', 'avif']
@@ -242,8 +242,12 @@ function genBaseName(original: string): string {
       return orig
     case 'random':
       return crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-    case 'timestamp':
-      return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    case 'timestamp': {
+      const d = new Date()
+      const p = (n: number) => String(n).padStart(2, '0')
+      const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+      return stamp + Math.random().toString(36).slice(2, 5)
+    }
     case 'prefix':
       return settings.value.prefix
         ? sanitizeBase(settings.value.prefix) + '-' + Math.random().toString(36).slice(2, 8)

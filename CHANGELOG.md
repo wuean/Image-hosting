@@ -6,6 +6,32 @@
 
 ---
 
+## 待发布（已 commit，待推送至 main）
+
+### 修复
+
+- **上传重命名功能失效（前端 bug）** — `web/src/views/Images.vue`
+  - 现象：默认「随机名」上传正常；但选任意重命名模式时，下拉框始终显示「自定义前缀」，且文件都不按所选模式重命名（保持原名）。
+  - 根因：`renameOptions` 用了 `key` 字段，但 Naive UI `n-select` 读取 `value` 字段。所有选项 `value` 均为 `undefined`，内部 Map 以 `undefined` 为 key 反复覆盖，最后胜出「自定义前缀」→ model 永远 `undefined`，`genBaseName` 走 default 分支返回原文件名。
+  - 修复：四个选项 `key` 改为 `value`；仅前端改动，后端无需改。
+
+- **时间戳重命名生成 36 进制串（不可读）** — `web/src/views/Images.vue`
+  - 现象：选「时间戳名」能重命名，但生成 `lqx4k9z...` 之类的串，不像时间。
+  - 根因：`genBaseName` 的 timestamp 分支用 `Date.now().toString(36)`（毫秒时间戳 36 进制），视觉上与随机串无区别。
+  - 修复：改为可读格式 `YYYYMMDDHHmmss` + 3 位随机后缀防同秒冲突，例 `20260731115347a3f`。
+
+### 安全
+
+- **上传 Content-Type 归一化 + 大小/数量限制 + CORS 收敛 + 安全响应头**（commit `84c457e`）
+  - 上传 Content-Type 由**按扩展名白名单归一化**取代客户端声明，杜绝伪造 `text/html` / SVG 触发存储型 XSS。
+  - Busboy `limits`：单文件 20MB、最多 10 文件、20 parts、10 fields；超限不入库。
+  - CORS 由 `*` 收敛为 `CORS_ORIGIN` / `PUBLIC_BASE_URL`，显式 `allowHeaders / allowMethods / maxAge`。
+  - 全站安全响应头：`X-Content-Type-Options: nosniff`、`X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`、`Permissions-Policy`；API 额外 `CSP: default-src 'none'; frame-ancestors 'none'`。
+
+> 注：生产环境仍**必须**在 `server/.env` 设置 `JWT_SECRET` / `MASTER_KEY`（各 ≥32 位随机）/ `ADMIN_PASSWORD`（强密码）/ `ALLOW_REGISTER=false`，否则令牌可伪造、桶密钥可被解密。
+
+---
+
 ## 已发布 · 2026-07-29 ~ 07-30（commit `d649fad`）
 
 > 涉及文件：`server/src/db.ts`、`server/src/routes/auth.ts`、`web/src/user.ts`(新)、
