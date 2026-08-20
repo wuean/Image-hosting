@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { NCard, NForm, NFormItem, NInput, NButton, useMessage } from 'naive-ui'
+import { NCard, NForm, NFormItem, NInput, NButton, NAlert } from 'naive-ui'
 import { api } from '../api'
 import { setCurrentUser } from '../user'
 
 const router = useRouter()
-const message = useMessage()
 const GITHUB_REPO = 'https://github.com/wuean/Image-hosting'
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
+const errMsg = ref('')
 
 const siteName = ref('图床管理')
 const logoText = ref('图')
@@ -40,15 +40,20 @@ onMounted(async () => {
 })
 
 async function login() {
-  if (!username.value || !password.value) return message.warning('请输入用户名和密码')
+  if (!username.value || !password.value) {
+    errMsg.value = '请输入用户名和密码'
+    return
+  }
   loading.value = true
+  errMsg.value = ''
   try {
     const res = await api.post('/api/auth/login', { username: username.value, password: password.value })
     localStorage.setItem('token', res.token)
     setCurrentUser(res.user)
+    errMsg.value = ''
     router.push('/images')
   } catch (e: any) {
-    message.error(e.message)
+    errMsg.value = e.message || '登录失败，请重试'
   } finally {
     loading.value = false
   }
@@ -77,12 +82,14 @@ async function login() {
             size="large"
             placeholder="用户名"
             :input-props="{ autocomplete: 'username' }"
+            @input="errMsg = ''"
           >
             <template #prefix>
               <span class="input-icon">&#128100;</span>
             </template>
           </n-input>
         </n-form-item>
+        <div class="login-hint">请使用用户名登录（暂不支持邮箱）</div>
         <n-form-item path="password">
           <n-input
             v-model:value="password"
@@ -91,12 +98,18 @@ async function login() {
             show-password-on="click"
             placeholder="密码"
             :input-props="{ autocomplete: 'current-password' }"
+            @input="errMsg = ''"
           >
             <template #prefix>
               <span class="input-icon">&#128274;</span>
             </template>
           </n-input>
         </n-form-item>
+
+        <n-alert v-if="errMsg" type="error" :show-icon="true" class="login-error">
+          {{ errMsg }}
+        </n-alert>
+
         <n-button
           type="primary"
           size="large"
@@ -230,6 +243,16 @@ async function login() {
 
 .login-form :deep(.n-form-item) {
   margin-bottom: 18px;
+}
+
+.login-hint {
+  margin: -6px 0 14px;
+  font-size: 12px;
+  color: #8f959e;
+}
+
+.login-error {
+  margin-bottom: 16px;
 }
 
 .login-form :deep(.n-input) {
