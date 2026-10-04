@@ -6,6 +6,76 @@
 
 ---
 
+## 已发布 · 2026-10-04（commit `643bd30`、`318fd33`）
+
+> 涉及文件：`server/src/routes/settings.ts`、`web/src/watermark.ts`(新)、
+> `web/src/views/Buckets.vue`、`web/src/views/Images.vue`、`web/src/views/Dashboard.vue`
+
+### 新增
+
+- **图片水印（全局配置 + 上传开关）**
+  - 后端 `settings` 新增全局键 `watermark`，默认 `{text:'', pos:'br', tile:false, opacity:35, size:3, color:'#FAA07A', rotate:-30}`；
+    加入 `PUBLIC_KEYS`（上传页需读取），写接口仍受 `authGuard + requireAdmin` 保护。
+  - 新增 `sanitizeWatermark()` 归一化校验：文字 ≤40 字、位置走白名单、不透明度 5–100、字号 1–12、
+    颜色须匹配 `^#[0-9a-fA-F]{6}$`、旋转 −90~90，非法值一律回退默认，避免脏配置写库。
+  - 新增 `web/src/watermark.ts`：类型 / 默认值 / `drawWatermark` 绘制 / `paintPreview` 预览 /
+    `loadWatermarkConfig` / `saveWatermarkConfig`。**设置页预览与上传页成品调用同一个绘制函数**，保证所见即所得。
+  - `Buckets.vue`（图床设置）改为「桶设置 / 水印设置」两个标签页；水印页为左右两栏（参数表单 + 实时预览），
+    预览支持内置示例图或选择本地图片。
+  - `Images.vue`（上传页）新增水印开关，**默认关闭**；水印文字留空时自动使用上传者显示名（昵称优先）。
+
+### 优化
+
+- **上传处理开关重构：由 1 组拆为 4 组互相独立**（`Images.vue`）
+  - 原单一 `settings.enabled` 同时管辖压缩、转 WebP、限制边长、重命名，耦合导致功能互相干扰。现为四行独立开关：
+
+    | 开关 | 默认 | 参数 |
+    |------|------|------|
+    | 图片压缩 | 开 | 质量 10–100%、最长边（0 为不限） |
+    | 自动转格式 | 开 | WebP（默认）/ JPEG / PNG |
+    | 重命名 | 开 | 时间戳名（默认）/ 随机名 / 自定义前缀 |
+    | 水印 | 关 | 使用全局水印配置，附「水印设置」跳转链接 |
+
+  - 重命名下拉去掉「原文件名」选项。
+  - 前三组参数持久化到 `localStorage`（键 `imgbed:upload-opts`），刷新或重开浏览器后保持上次选择；水印开关不记忆。
+  - 抽出 `encodeWanted` / `qualityApplies` / `planSummary`，让面板提示文案与实际执行的判定共用同一套逻辑。
+  - 面板实时汇总当前处理计划（如 `质量 80% · 最长边 1920px · 转 WEBP · 时间戳名`）。
+
+### 修复
+
+- **「自动转格式」下拉失效 / 开关互相打架** —— 开关耦合所致，随上述重构一并解决。
+- **关闭压缩仍被降质**：`compress.enabled=false` 时不再向 `canvas.toBlob` 传 quality 参数。
+- **SVG / GIF 被错误改名为 `.webp`**（既有 bug）：不再无条件把目标扩展名写成 `webp`。
+  未发生编码时保留原扩展名，编码后按 `blob.type` 反查真实后缀。
+- **转 JPEG 后透明区域变黑**：转 JPEG 前先以白色 `fillRect` 铺底。
+- **仪表盘「最近上传」被不规则 / 竖版图片撑开容器**（`Dashboard.vue`）
+  - 现象：竖图或非规则比例的图会把缩略图容器撑高，影响下方内容排版。
+  - 根因：`n-image` 的 `width` / `height` 属性**不接受百分比值**，会被浏览器忽略；图片遂按原始比例渲染，竖图高度溢出。
+  - 修复：`.recent-thumb` 固定高度 110px + `overflow:hidden`，`.n-image` 绝对定位铺满，图片 `object-fit:cover`；
+    并删除失效的 `width="100%" height="100%"`。修复后不同比例图片统一居中裁切，卡片高度一致。
+
+### 文档
+
+- README 新增「上传前处理与水印」章节，并补齐 API / 数据模型 / 安全说明 / FAQ 中与水印相关的条目。
+- DEPLOY 新增「GitHub 连不上：改用 SSH over 443」排障小节，升级流程补充 `curl /api/health` 验证与强刷提示。
+
+---
+
+## 已发布 · 2026-08-20（commit `9ed152e`）
+
+> 涉及文件：`web/src/api.ts`、`web/src/views/Login.vue`
+
+### 修复
+
+- **登录失败时页面没有任何提示**（看起来像"点了没反应"）
+  - 根因：`api.ts` 把所有 401 一律当作"会话过期"——清除 token 并整页跳转 `/login`。
+    但登录 / 注册 / 激活接口**自身**就会返回 401（密码错误、账号未激活等），
+    于是整页刷新把刚渲染出来的错误提示一起冲掉了。
+  - 修复：仅当「已携带 token **且** 不是 `/api/auth/*` 鉴权接口」时才判定为会话过期并跳转；
+    登录页错误提示改为内联展示，不再被刷新吞掉。
+
+---
+
 ## 已发布 · 2026-07-31（commit `6430c09`）
 
 ### 修复
@@ -102,8 +172,19 @@
 
 ## 版本管理约定
 
-- **部署流程**（用户确认，不再打包 tar.gz）：
-  `git pull` → `cd web && npm install && npm run build` → `cd server && npm install && pm2 restart imgbed` → 浏览器 Ctrl+F5。
-- `imgbed-deploy.tar.gz` 为历史产物，不再维护/使用，不纳入 git。
-- 更新时绝不覆盖 `server/.env`（密钥）与 `server/data/`（SQLite 库）；`git pull` 仅动源码，安全。
+- **首选：从 GitHub 拉取**
+  `git pull` → `cd web && npm run build` → `cd server && npm install`（仅依赖有变化时）→ `pm2 restart imgbed` → 浏览器 Ctrl+F5。
+  - 后端跑的是源码（`tsx src/index.ts`），改了 `server/src` **必须重启 pm2**；前端 `web/dist` 由后端静态托管，重新构建即可，无需动 Nginx。
+  - 国内网络下 `github.com:443` 常被连接重置，本地与服务器均可改用 **SSH over 443**：
+    `git remote set-url origin ssh://git@ssh.github.com:443/wuean/Image-hosting.git`
+    （详见 `DEPLOY.md` 第四节「GitHub 连不上」）。
+- **备选：服务器连不上 GitHub 时，走宝塔面板上传**
+  - 本地打包（只带源码与产物，不含 `node_modules` / `.env` / `data`）：
+    `tar -czf update.tgz server/src web/src web/dist`
+  - 宝塔面板「文件」上传到 `/www/wwwroot/imgbed` → 解压覆盖 → `pm2 restart imgbed`。
+  - `web/dist` 若已在本地构建，服务器**无需**再 `npm run build`；但后端跑源码，**`server/src` 必须一起更新**。
+  - 事后想切回 git 流程：先在服务器 `git checkout -- .` 丢弃覆盖产生的差异，再 `git pull`
+    （上传内容与远端提交一致，丢弃本地副本不会丢东西）。
+- `imgbed-deploy.tar.gz` / `update.tgz` 均为临时打包产物，**不纳入 git**。
+- 更新时绝不覆盖 `server/.env`（密钥）与 `server/data/`（SQLite 库）。
 - 提交粒度建议按「功能」而非「文件」：每个独立功能一次 commit，便于回滚与阅读。
