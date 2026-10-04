@@ -4,7 +4,7 @@
 
 **演示站点**：https://imgbed.lefuo.com
 
-![22ccd8cf9ffb480f.webp](http://file.wuean.com/2026/07/22ccd8cf9ffb480f.webp)
+![界面预览](https://image.lefuo.com/2026/10/20261004205642rja.webp)
 
 ## 功能特性
 
