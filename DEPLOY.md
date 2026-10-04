@@ -56,12 +56,12 @@ node -v   # 应为 v22.x
 
 ## 四、获取代码到服务器
 
-**等 GitHub 推送成功后（后台重试中）：**
+**方式 A：从 GitHub 拉取**（推荐，后续可直接 `git pull` 升级）
 ```bash
 cd /www/wwwroot
-git clone https://github.com/wuean/Image-hosting.git imgbed
+git clone ssh://git@ssh.github.com:443/wuean/Image-hosting.git imgbed
 ```
-或**本地先打包上传**（排除体积大/敏感目录）：
+**方式 B：本地先打包上传**（GitHub 实在拉不动时的兜底，排除体积大/敏感目录）
 ```powershell
 # 本地 Windows 打包
 cd F:\web\imgbed
@@ -70,6 +70,45 @@ tar --exclude=node_modules --exclude=web/dist --exclude=server/.env --exclude=se
 然后用宝塔「文件」上传 `imgbed.tar.gz` 到 `/www/wwwroot/imgbed/` 并解压，或用 `scp`。
 
 > 目录结构必须保持 `imgbed/server` 与 `imgbed/web` 同级（后端按相对路径解析 `web/dist` 和 `data/`）。
+
+### GitHub 连不上：改用 SSH over 443
+
+若 `git clone` / `git push` / `git pull` 报：
+```
+fatal: unable to access 'https://github.com/...': Recv failure: Connection was reset
+```
+说明到 `github.com` 的 443 被重置（国内网络常见）。GitHub 另有一个 **443 端口的 SSH 入口 `ssh.github.com`**，通常能通，本地和服务器都适用。
+
+1）先探测这台机器能不能走通（Windows PowerShell / Linux 都行）：
+```bash
+ssh -T -p 443 -o StrictHostKeyChecking=accept-new git@ssh.github.com
+# 期望输出：Hi <用户名>! You've successfully authenticated, but GitHub does not provide shell access.
+# 注意：这条命令即使成功也返回非 0 退出码，属于正常现象
+```
+首次会提示把 `[ssh.github.com]:443` 加入 known_hosts，回车确认即可。
+
+2）若提示 `Permission denied (publickey)`，说明这台机器还没有注册到 GitHub 的密钥：
+```bash
+ssh-keygen -t ed25519 -C "imgbed-deploy"   # 一路回车，不需要设密码
+cat ~/.ssh/id_ed25519.pub                  # 复制输出的整行
+```
+然后到 GitHub → Settings → SSH and GPG keys → New SSH key，粘贴保存。
+
+3）把 remote 换成 SSH over 443。**必须用 `ssh://` 形式**，scp 那种 `git@主机:路径` 的写法没法指定端口，会退回 22：
+```bash
+git remote set-url origin ssh://git@ssh.github.com:443/wuean/Image-hosting.git
+git remote -v   # 确认已生效
+```
+4）之后正常 `git push` / `git pull` 即可，不用每次改动。
+
+> 想让**所有** GitHub 仓库都走 443（remote 保持 `git@github.com:wuean/Image-hosting.git` 不变），可写 `~/.ssh/config`：
+> ```
+> Host github.com
+>   HostName ssh.github.com
+>   Port 443
+>   User git
+> ```
+> 这样任何 `github.com` 的 SSH 连接都会自动转到 443 端口。
 
 ---
 
@@ -178,7 +217,17 @@ curl http://127.0.0.1:3000/api/health
   cp -r /www/wwwroot/imgbed/server/data /backup/imgbed-data-$(date +%F)
   ```
 - **密钥**：`server/.env` 切勿丢失；丢失需重新生成并会导致已存桶密钥/SMTP 密码无法解密（需重新填）。
-- **升级**：`git pull` → 重新 `web` 构建 + `server` 装依赖 → `pm2 restart imgbed`。
+- **升级**：
+  ```bash
+  cd /www/wwwroot/imgbed
+  git pull                      # 报 Connection was reset 就按第四节「GitHub 连不上」切到 SSH 443
+  cd web && npm run build       # 前端必须重建（web/dist 未纳入版本库）
+  cd ../server && npm install   # 仅当依赖有变化时执行，没有新依赖可跳过
+  pm2 restart imgbed
+  curl -s http://127.0.0.1:3000/api/health   # 应返回 {"ok":true,...}
+  ```
+  浏览器记得 **Ctrl+F5 强刷**（前端资源文件名带 hash，不强刷会加载旧页面）。
+  `.env`、`server/data/`、`node_modules/`、`dist/` 都在 `.gitignore` 里，`git pull` 不会覆盖它们，线上数据和密钥安全。
 - **桶配置备份/迁移**：升级或迁移前，可在后台「存储桶配置」页点「导出桶设置」下载 JSON（含密钥明文）留底；迁移到新实例后点「导入桶设置」即可整批恢复，无需逐个手填。注意该文件含敏感凭据，仅本地留存。
 - **迁移**：整目录打包（排除 node_modules/dist/.env/data/.workbuddy）到新机，重装依赖、重建 .env、反向代理即可。
 
@@ -194,3 +243,5 @@ curl http://127.0.0.1:3000/api/health
 | 重启后桶/SMTP 密码失效 | `MASTER_KEY` 被改过；必须固定不变 |
 | 端口冲突 | WP 用 80/443，本项目走 3000 仅内网，互不影响 |
 | 宝塔 Nginx 未生效反代 | 确认站点「反向代理」已启用且目标 `127.0.0.1:3000`，`pm2` 进程在跑 |
+| `Recv failure: Connection was reset` | 到 `github.com` 的 443 被重置：改用 SSH over 443，见第四节「GitHub 连不上」 |
+| SSH 提示 `Permission denied (publickey)` | 该机器没有注册到 GitHub 的密钥：`ssh-keygen` 生成后把 `.pub` 加到 GitHub 的 SSH keys |
