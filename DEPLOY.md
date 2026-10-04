@@ -218,6 +218,9 @@ curl http://127.0.0.1:3000/api/health
   ```
 - **密钥**：`server/.env` 切勿丢失；丢失需重新生成并会导致已存桶密钥/SMTP 密码无法解密（需重新填）。
 - **升级**：
+
+  **方式 A：从 GitHub 拉取**
+
   ```bash
   cd /www/wwwroot/imgbed
   git pull                      # 报 Connection was reset 就按第四节「GitHub 连不上」切到 SSH 443
@@ -226,8 +229,27 @@ curl http://127.0.0.1:3000/api/health
   pm2 restart imgbed
   curl -s http://127.0.0.1:3000/api/health   # 应返回 {"ok":true,...}
   ```
+
   浏览器记得 **Ctrl+F5 强刷**（前端资源文件名带 hash，不强刷会加载旧页面）。
   `.env`、`server/data/`、`node_modules/`、`dist/` 都在 `.gitignore` 里，`git pull` 不会覆盖它们，线上数据和密钥安全。
+
+  **方式 B：服务器连不上 GitHub 时，用宝塔面板上传**
+
+  1. 本地打包（只带源码与产物，不含 `node_modules` / `.env` / `data`）：
+     ```bash
+     tar -czf update.tgz server/src web/src web/dist
+     ```
+  2. 宝塔面板 → **文件** → 进入 `/www/wwwroot/imgbed` → **上传** `update.tgz` → 右键**解压**、覆盖。
+  3. 重启后端：
+     ```bash
+     cd /www/wwwroot/imgbed
+     pm2 restart imgbed
+     curl -s http://127.0.0.1:3000/api/health
+     ```
+  4. 浏览器 **Ctrl+F5** 强刷。
+
+  - `web/dist` 若已在本地构建好，服务器**无需**再执行 `npm run build`；但后端跑的是源码（`tsx src/index.ts`），**`server/src` 必须一起更新**，否则只更新了前端。
+  - 事后想切回方式 A：先在服务器 `git checkout -- .` 丢弃覆盖产生的差异，再 `git pull`（上传的内容与远端提交一致，丢弃本地副本不会丢东西）。
 - **桶配置备份/迁移**：升级或迁移前，可在后台「存储桶配置」页点「导出桶设置」下载 JSON（含密钥明文）留底；迁移到新实例后点「导入桶设置」即可整批恢复，无需逐个手填。注意该文件含敏感凭据，仅本地留存。
 - **迁移**：整目录打包（排除 node_modules/dist/.env/data/.workbuddy）到新机，重装依赖、重建 .env、反向代理即可。
 

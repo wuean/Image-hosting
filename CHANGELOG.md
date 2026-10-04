@@ -172,19 +172,15 @@
 
 ## 版本管理约定
 
-- **首选：从 GitHub 拉取**
-  `git pull` → `cd web && npm run build` → `cd server && npm install`（仅依赖有变化时）→ `pm2 restart imgbed` → 浏览器 Ctrl+F5。
-  - 后端跑的是源码（`tsx src/index.ts`），改了 `server/src` **必须重启 pm2**；前端 `web/dist` 由后端静态托管，重新构建即可，无需动 Nginx。
-  - 国内网络下 `github.com:443` 常被连接重置，本地与服务器均可改用 **SSH over 443**：
-    `git remote set-url origin ssh://git@ssh.github.com:443/wuean/Image-hosting.git`
-    （详见 `DEPLOY.md` 第四节「GitHub 连不上」）。
-- **备选：服务器连不上 GitHub 时，走宝塔面板上传**
-  - 本地打包（只带源码与产物，不含 `node_modules` / `.env` / `data`）：
-    `tar -czf update.tgz server/src web/src web/dist`
-  - 宝塔面板「文件」上传到 `/www/wwwroot/imgbed` → 解压覆盖 → `pm2 restart imgbed`。
-  - `web/dist` 若已在本地构建，服务器**无需**再 `npm run build`；但后端跑源码，**`server/src` 必须一起更新**。
-  - 事后想切回 git 流程：先在服务器 `git checkout -- .` 丢弃覆盖产生的差异，再 `git pull`
-    （上传内容与远端提交一致，丢弃本地副本不会丢东西）。
-- `imgbed-deploy.tar.gz` / `update.tgz` 均为临时打包产物，**不纳入 git**。
-- 更新时绝不覆盖 `server/.env`（密钥）与 `server/data/`（SQLite 库）。
-- 提交粒度建议按「功能」而非「文件」：每个独立功能一次 commit，便于回滚与阅读。
+> 具体的部署 / 升级命令统一维护在 `DEPLOY.md`，本节只记录需要长期遵守的约定，
+> 避免同一套流程在本文件里出现第二份副本（副本会随流程变动而失真）。
+
+- **部署 / 升级流程**：见 `DEPLOY.md` 第四节「获取代码到服务器」与第十节「备份与维护 → 升级」。
+  两条路径（GitHub `git pull`、服务器连不上 GitHub 时走宝塔面板上传）的完整步骤都在该文件内。
+- **绝不覆盖**：`server/.env`（密钥）与 `server/data/`（SQLite 库）任何时候都不得被更新流程覆盖。
+  尤其 `MASTER_KEY` 一旦变更，已加密的桶配置与 SMTP 密码将无法解密，只能重填。
+- **后端改源码必须重启**：pm2 以 `tsx src/index.ts` 直接运行源码且**非 watch 模式**，
+  任何 `server/src` 的改动都要 `pm2 restart imgbed` 才生效（曾因忘记重启而误判为功能没用，属高频坑）。
+- **打包产物不入库**：`imgbed-deploy.tar.gz` / `update.tgz` 均为临时产物，不纳入 git。
+- **提交粒度**：按「功能」而非「文件」，每个独立功能一次 commit，便于回滚与阅读。
+- **文档分工**：`README.md` 面向使用与二次开发，`DEPLOY.md` 面向线上部署运维，本文件只记变更与约定。
