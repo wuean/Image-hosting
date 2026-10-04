@@ -1,10 +1,23 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, h } from 'vue'
-import { NCard, NButton, NDataTable, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NSpace, NAlert, useMessage, useDialog } from 'naive-ui'
+import { ref, onMounted, computed, watch, h } from 'vue'
+import { useRoute } from 'vue-router'
+import { NCard, NButton, NDataTable, NModal, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, NSpace, NAlert, NTabs, NTabPane, NSlider, NCheckbox, NColorPicker, NText, NSpin, useMessage, useDialog } from 'naive-ui'
 import { api } from '../api'
+import { currentUser, displayName } from '../user'
+import {
+  WM_DEFAULTS,
+  WM_POS,
+  loadWatermarkConfig,
+  saveWatermarkConfig,
+  paintPreview,
+  demoImage,
+  loadImageFile,
+  type WatermarkConfig
+} from '../watermark'
 
 const message = useMessage()
 const dialog = useDialog()
+const route = useRoute()
 const buckets = ref<any[]>([])
 const defaultBucketId = ref<number | null>(null)
 const loading = ref(false)
@@ -254,26 +267,173 @@ async function setDefault(id: number) {
   }
 }
 
-onMounted(load)
+// ===== 水印设置（全局一套，仅管理员可改；上传页读取后应用）=====
+const user = currentUser
+const isAdmin = computed(() => user.value?.role === 'admin')
+
+const tab = ref('buckets')
+const wm = ref<WatermarkConfig>({ ...WM_DEFAULTS })
+const wmLoading = ref(false)
+const wmSaving = ref(false)
+const previewCanvas = ref<HTMLCanvasElement | null>(null)
+const previewBase = ref<HTMLImageElement | HTMLCanvasElement>(demoImage())
+const previewName = ref('内置示例图')
+const previewInput = ref<HTMLInputElement | null>(null)
+
+function renderWmPreview() {
+  const cv = previewCanvas.value
+  if (cv) paintPreview(cv, previewBase.value, wm.value)
+}
+
+// 参数变化或预览画布刚挂载（切回本标签页）时重绘
+watch([wm, previewCanvas], renderWmPreview, { deep: true })
+
+async function loadWatermark() {
+  wmLoading.value = true
+  try {
+    wm.value = { ...(await loadWatermarkConfig(true)) }
+    renderWmPreview()
+  } finally {
+    wmLoading.value = false
+  }
+}
+
+async function saveWatermark() {
+  if (!isAdmin.value) return message.warning('水印为全局配置，仅管理员可修改')
+  wmSaving.value = true
+  try {
+    await saveWatermarkConfig(wm.value)
+    message.success('水印设置已保存，上传页开启水印后即生效')
+  } catch (e: any) {
+    message.error(e.message)
+  } finally {
+    wmSaving.value = false
+  }
+}
+
+function resetWatermark() {
+  wm.value = { ...WM_DEFAULTS }
+}
+
+async function pickPreviewImage(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    previewBase.value = await loadImageFile(file)
+    previewName.value = file.name
+    renderWmPreview()
+  } catch (err: any) {
+    message.error(`预览图解码失败：${err.message || err}`)
+  } finally {
+    input.value = ''
+  }
+}
+
+function useDemoPreview() {
+  previewBase.value = demoImage()
+  previewName.value = '内置示例图'
+  renderWmPreview()
+}
+
+onMounted(() => {
+  load()
+  loadWatermark()
+  if (route.query.tab === 'watermark') tab.value = 'watermark'
+})
 </script>
 
 <template>
-  <n-card title="存储桶配置" :bordered="false">
-    <template #header-extra>
-      <n-space>
-        <n-button @click="exportBuckets">导出桶设置</n-button>
-        <n-button @click="triggerImport">导入桶设置</n-button>
-        <n-button type="primary" @click="openCreate">添加存储桶</n-button>
-      </n-space>
-    </template>
+  <n-tabs v-model:value="tab" type="line" animated>
+    <n-tab-pane name="buckets" tab="桶设置">
+      <n-card title="存储桶配置" :bordered="false">
+        <template #header-extra>
+          <n-space>
+            <n-button @click="exportBuckets">导出桶设置</n-button>
+            <n-button @click="triggerImport">导入桶设置</n-button>
+            <n-button type="primary" @click="openCreate">添加存储桶</n-button>
+          </n-space>
+        </template>
 
-    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px">
-      导出文件包含存储桶的密钥（AccessKey / Secret 等），请妥善保管；导入会按名称更新已存在的桶配置。
-    </n-alert>
+        <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px">
+          导出文件包含存储桶的密钥（AccessKey / Secret 等），请妥善保管；导入会按名称更新已存在的桶配置。
+        </n-alert>
 
-    <n-data-table :columns="columns" :data="buckets" :loading="loading" :bordered="false" />
-    <input ref="fileInput" type="file" accept="application/json,.json" style="display: none" @change="onFileChange" />
-  </n-card>
+        <n-data-table :columns="columns" :data="buckets" :loading="loading" :bordered="false" />
+        <input ref="fileInput" type="file" accept="application/json,.json" style="display: none" @change="onFileChange" />
+      </n-card>
+    </n-tab-pane>
+
+    <n-tab-pane name="watermark" tab="水印设置">
+      <n-card title="水印设置" :bordered="false">
+        <template #header-extra>
+          <n-space>
+            <n-button :disabled="!isAdmin" @click="resetWatermark">恢复默认</n-button>
+            <n-button type="primary" :loading="wmSaving" :disabled="!isAdmin" @click="saveWatermark">保存</n-button>
+          </n-space>
+        </template>
+
+        <n-alert v-if="!isAdmin" type="info" :show-icon="true" style="margin-bottom: 12px">
+          水印是全局配置，仅管理员可修改，此处为只读预览。
+        </n-alert>
+        <n-alert v-else type="info" :show-icon="true" style="margin-bottom: 12px">
+          保存后，在「图片上传」页打开水印开关即按此配置生成水印；文字留空则自动使用上传者的用户名。
+        </n-alert>
+
+        <div class="wm-layout">
+          <n-form class="wm-form" label-placement="left" label-width="96" :disabled="!isAdmin">
+          <n-form-item label="水印文字">
+            <n-input v-model:value="wm.text" :placeholder="`留空则用上传者用户名，如：${displayName()}`" />
+          </n-form-item>
+          <n-form-item label="位置">
+            <n-space align="center">
+              <n-select v-model:value="wm.pos" :options="WM_POS" :disabled="wm.tile || !isAdmin" style="width: 110px" />
+              <n-checkbox v-model:checked="wm.tile" :disabled="!isAdmin">平铺（防盗图）</n-checkbox>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="不透明度">
+            <n-space align="center" :wrap="false">
+              <n-slider v-model:value="wm.opacity" :min="5" :max="100" :disabled="!isAdmin" style="width: 220px" />
+              <n-text style="width: 44px">{{ wm.opacity }}%</n-text>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="字号">
+            <n-space align="center" :wrap="false">
+              <n-slider v-model:value="wm.size" :min="1" :max="12" :disabled="!isAdmin" style="width: 220px" />
+              <n-text depth="3" style="font-size: 12px">图宽的 {{ wm.size }}%</n-text>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="旋转">
+            <n-space align="center" :wrap="false">
+              <n-slider v-model:value="wm.rotate" :min="-90" :max="90" :disabled="!isAdmin" style="width: 220px" />
+              <n-text style="width: 44px">{{ wm.rotate }}°</n-text>
+            </n-space>
+          </n-form-item>
+          <n-form-item label="颜色">
+            <!-- n-color-picker 的根节点是 fragment，style 传不进去，宽度要靠外层容器约束 -->
+            <div class="wm-color">
+              <n-color-picker v-model:value="wm.color" :show-alpha="false" :disabled="!isAdmin" />
+            </div>
+          </n-form-item>
+          </n-form>
+
+          <div class="wm-preview">
+            <n-text depth="3" class="wm-preview-title">效果预览</n-text>
+            <n-spin :show="wmLoading">
+              <canvas ref="previewCanvas" class="wm-canvas" />
+            </n-spin>
+            <n-space align="center" style="margin-top: 10px">
+              <n-button size="small" @click="useDemoPreview">用示例图</n-button>
+              <n-button size="small" @click="previewInput?.click()">选择本地图片</n-button>
+            </n-space>
+            <n-text depth="3" style="font-size: 12px; display: block; margin-top: 6px">{{ previewName }}（仅本地预览，不会上传）</n-text>
+          </div>
+        </div>
+
+        <input ref="previewInput" type="file" accept="image/*" style="display: none" @change="pickPreviewImage" />
+      </n-card>
+    </n-tab-pane>
+  </n-tabs>
 
   <n-modal v-model:show="showModal" preset="card" :title="editingId ? '编辑存储桶' : '添加存储桶'" style="width: 520px">
     <n-form label-placement="left" label-width="140">
@@ -314,3 +474,43 @@ onMounted(load)
     </template>
   </n-modal>
 </template>
+
+<style scoped>
+/* 左参数、右预览；窄屏自动换行成上下排列 */
+.wm-layout {
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.wm-form {
+  flex: 0 1 430px;
+  min-width: 320px;
+}
+.wm-preview {
+  flex: 0 1 360px;
+  min-width: 280px;
+}
+/* 颜色选择器默认铺满表单，收窄成小块色板，避免长条不协调 */
+.wm-color {
+  width: 140px;
+}
+.wm-color :deep(.n-color-picker) {
+  width: 100%;
+}
+.wm-preview-title {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+/* 水印预览：canvas 是替换元素，只约束最大宽高即可等比缩放 */
+.wm-canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 320px;
+  max-height: 240px;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft, #efeff5);
+}
+</style>

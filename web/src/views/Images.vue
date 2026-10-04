@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { NCard, NSelect, NTabs, NTabPane, NUpload, NUploadDragger, NButton, NSpace, NImage, NPagination, NEmpty, NSpin, NText, NCollapse, NCollapseItem, NSwitch, NSlider, NInputNumber, NInput, NCheckbox, useMessage, useDialog } from 'naive-ui'
 import { api } from '../api'
+import { loadWatermarkConfig, watermarkConfig, watermarkText, drawWatermark } from '../watermark'
 
 const message = useMessage()
 const dialog = useDialog()
 const route = useRoute()
+const router = useRouter()
 const isManage = computed(() => route.path.includes('/manage'))
 
 const buckets = ref<any[]>([])
@@ -102,6 +104,7 @@ async function refreshAll() {
 async function doUpload(files: File[]) {
   if (!bucketId.value) return message.warning('请先在「图床设置」页添加并选择一个桶')
   uploading.value = true
+  warnedUnsupported = false
   try {
     const processed = await Promise.all(files.map(processImage))
     const fd = new FormData()
@@ -196,24 +199,116 @@ function fmtSize(n: number) {
   return n + ' B'
 }
 
-// ===== 上传前处理：压缩 / 转 WebP / 重命名 =====
-const settings = ref({
-  enabled: true,
-  toWebp: true,
-  quality: 80,
-  maxEdge: 1920, // 0 = 不限制
-  renameMode: 'random', // original | random | timestamp | prefix
-  prefix: ''
-})
+// ===== 上传前处理：压缩 / 转格式 / 重命名 / 水印 =====
+// 四组开关互相独立；前三组的参数记在 localStorage，水印开关每次默认关闭（配置存后端全局设置）
+const OPTS_KEY = 'imgbed:upload-opts'
+
+type UploadOpts = {
+  compress: { enabled: boolean; quality: number; maxEdge: number }
+  format: { enabled: boolean; target: string }
+  rename: { enabled: boolean; mode: string; prefix: string }
+}
+
+const OPTS_DEFAULTS: UploadOpts = {
+  compress: { enabled: true, quality: 80, maxEdge: 1920 },
+  format: { enabled: true, target: 'webp' },
+  rename: { enabled: true, mode: 'timestamp', prefix: '' }
+}
+
+const FORMATS = [
+  { label: 'WebP（推荐，体积最小）', value: 'webp' },
+  { label: 'JPEG（jpg，最通用）', value: 'jpeg' },
+  { label: 'PNG（无损，体积偏大）', value: 'png' }
+]
+const FORMAT_MIME: Record<string, string> = { webp: 'image/webp', jpeg: 'image/jpeg', png: 'image/png' }
+const MIME_EXT: Record<string, string> = { 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png' }
 
 const renameOptions = [
-  { label: '原文件名', value: 'original' },
-  { label: '随机名', value: 'random' },
   { label: '时间戳名', value: 'timestamp' },
+  { label: '随机名', value: 'random' },
   { label: '自定义前缀', value: 'prefix' }
 ]
 
+function loadOpts(): UploadOpts {
+  const pick = (v: any, min: number, max: number, dflt: number) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : dflt
+  }
+  try {
+    const raw = localStorage.getItem(OPTS_KEY)
+    if (!raw) return JSON.parse(JSON.stringify(OPTS_DEFAULTS))
+    const o = JSON.parse(raw)
+    // 逐项合并：缺字段或脏数据回退默认，避免旧结构让页面崩掉
+    return {
+      compress: {
+        enabled: o?.compress?.enabled !== false,
+        quality: pick(o?.compress?.quality, 10, 100, OPTS_DEFAULTS.compress.quality),
+        maxEdge: pick(o?.compress?.maxEdge, 0, 20000, OPTS_DEFAULTS.compress.maxEdge)
+      },
+      format: {
+        enabled: o?.format?.enabled !== false,
+        target: FORMATS.some((f) => f.value === o?.format?.target) ? o.format.target : OPTS_DEFAULTS.format.target
+      },
+      rename: {
+        enabled: o?.rename?.enabled !== false,
+        mode: renameOptions.some((m) => m.value === o?.rename?.mode) ? o.rename.mode : OPTS_DEFAULTS.rename.mode,
+        prefix: typeof o?.rename?.prefix === 'string' ? o.rename.prefix.slice(0, 40) : ''
+      }
+    }
+  } catch {
+    return JSON.parse(JSON.stringify(OPTS_DEFAULTS))
+  }
+}
+
+const initialOpts = loadOpts()
+const compress = ref(initialOpts.compress)
+const format = ref(initialOpts.format)
+const rename = ref(initialOpts.rename)
+
+// 水印开关属于「这一次上传要不要盖」，不记忆，默认关闭
+const watermarkOn = ref(false)
+
+// 参数变化即写回本地，刷新/重开浏览器后保持上次选择
+watch(
+  [compress, format, rename],
+  () => {
+    localStorage.setItem(OPTS_KEY, JSON.stringify({ compress: compress.value, format: format.value, rename: rename.value }))
+  },
+  { deep: true }
+)
+
 const RASTER_EXT = ['png', 'jpg', 'jpeg', 'bmp', 'webp', 'avif']
+
+// 压缩各项都不触发重新编码时（质量 100 且不限边长）就没有必要过一遍画布
+const compressWillEncode = computed(() => {
+  const c = compress.value
+  return c.enabled && (c.quality < 100 || c.maxEdge > 0)
+})
+
+// 不做任何处理时也无需编码，直接原样上传
+const encodeWanted = computed(() => compressWillEncode.value || format.value.enabled)
+
+// PNG 是无损格式，toBlob 的质量参数对它无效
+const qualityApplies = computed(() => !(format.value.enabled && format.value.target === 'png'))
+
+// 面板标题右侧的实时汇总：一眼看出这次上传到底会做什么
+const planSummary = computed(() => {
+  const c = compress.value
+  const parts: string[] = []
+  if (c.enabled) {
+    if (c.quality < 100) parts.push(`质量 ${c.quality}%`)
+    if (c.maxEdge > 0) parts.push(`最长边 ${c.maxEdge}px`)
+    if (!parts.length) parts.push('压缩')
+  }
+  if (format.value.enabled) parts.push(`转 ${format.value.target.toUpperCase()}`)
+  if (watermarkOn.value) parts.push('加水印')
+  parts.push(rename.value.enabled ? renameOptions.find((o) => o.value === rename.value.mode)?.label || '重命名' : '原名')
+  return parts.join(' · ')
+})
+
+function gotoWatermarkSettings() {
+  router.push({ path: '/buckets', query: { tab: 'watermark' } })
+}
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -235,25 +330,36 @@ function sanitizeBase(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').slice(0, 80) || 'image'
 }
 
+function extOf(name: string): string {
+  const i = name.lastIndexOf('.')
+  return i > 0 ? name.slice(i + 1).toLowerCase() : 'png'
+}
+
+/** 能否交给 canvas 处理：svg / gif 不行（前者无法解码，后者会丢动画） */
+function isRaster(ext: string) {
+  return RASTER_EXT.includes(ext)
+}
+
+function timestampName(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${Math.random().toString(36).slice(2, 5)}`
+}
+
+/** 重命名开关关闭时保留原文件名，只做安全字符清理 */
 function genBaseName(original: string): string {
   const orig = sanitizeBase(original.split('/').pop()?.split('.')[0] || 'image')
-  switch (settings.value.renameMode) {
-    case 'original':
-      return orig
+  if (!rename.value.enabled) return orig
+  switch (rename.value.mode) {
     case 'random':
       return crypto.randomUUID().replace(/-/g, '').slice(0, 16)
-    case 'timestamp': {
-      const d = new Date()
-      const p = (n: number) => String(n).padStart(2, '0')
-      const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
-      return stamp + Math.random().toString(36).slice(2, 5)
+    case 'prefix': {
+      const p = sanitizeBase(rename.value.prefix || '')
+      return p ? `${p}-${Math.random().toString(36).slice(2, 8)}` : timestampName()
     }
-    case 'prefix':
-      return settings.value.prefix
-        ? sanitizeBase(settings.value.prefix) + '-' + Math.random().toString(36).slice(2, 8)
-        : orig
+    case 'timestamp':
     default:
-      return orig
+      return timestampName()
   }
 }
 
@@ -261,23 +367,33 @@ function withNewName(file: File, finalName: string): File {
   return new File([file], finalName, { type: file.type })
 }
 
-async function processImage(file: File): Promise<File> {
-  const ext0 = (file.name.split('.').pop() || 'png').toLowerCase()
-  const isRaster = RASTER_EXT.includes(ext0)
-  const needEncode =
-    settings.value.enabled && isRaster && (settings.value.toWebp || settings.value.quality < 100 || settings.value.maxEdge > 0)
-  const targetExt = settings.value.enabled && settings.value.toWebp ? 'webp' : ext0
-  const base = settings.value.enabled ? genBaseName(file.name) : sanitizeBase(file.name.split('/').pop()?.split('.')[0] || 'image')
-  const finalName = `${base}.${targetExt}`
+/** 计算某个文件本次的实际动作，UI 汇总与 processImage 共用同一套判定 */
+function makePlan(file: File) {
+  const ext = extOf(file.name)
+  const raster = isRaster(ext)
+  const willEncode = raster && (encodeWanted.value || watermarkOn.value)
+  return { ext, raster, willEncode, base: genBaseName(file.name) }
+}
 
-  if (!needEncode) return withNewName(file, finalName)
+// 水印对不可解码的格式无效：每批上传只提示一次，不静默忽略
+let warnedUnsupported = false
+
+async function processImage(file: File): Promise<File> {
+  const p = makePlan(file)
+  if (!p.willEncode) {
+    if (watermarkOn.value && !p.raster && !warnedUnsupported) {
+      warnedUnsupported = true
+      message.warning('水印仅支持 png / jpg / webp / bmp / avif，SVG 与 GIF 将按原样上传')
+    }
+    return withNewName(file, `${p.base}.${p.ext}`)
+  }
 
   try {
     const img = await loadImage(file)
     let w = img.naturalWidth
     let h = img.naturalHeight
-    if (settings.value.maxEdge > 0) {
-      const scale = Math.min(1, settings.value.maxEdge / Math.max(w, h))
+    if (compress.value.enabled && compress.value.maxEdge > 0) {
+      const scale = Math.min(1, compress.value.maxEdge / Math.max(w, h))
       w = Math.max(1, Math.round(w * scale))
       h = Math.max(1, Math.round(h * scale))
     }
@@ -286,18 +402,32 @@ async function processImage(file: File): Promise<File> {
     canvas.height = h
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('无法创建画布')
+    const type = format.value.enabled ? FORMAT_MIME[format.value.target] : file.type || 'image/png'
+    // JPEG 没有透明通道，透明区域会被填成黑色，先铺一层白底
+    if (type === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+    }
     ctx.drawImage(img, 0, 0, w, h)
-    const type = settings.value.toWebp ? 'image/webp' : file.type || 'image/png'
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, settings.value.quality / 100))
+    if (watermarkOn.value) drawWatermark(ctx, w, h, watermarkConfig.value, watermarkText(watermarkConfig.value))
+
+    // 压缩关掉时不传质量参数，交给编码器默认值，避免「没开压缩却被降质」
+    const q = compress.value.enabled ? compress.value.quality / 100 : undefined
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, q))
     if (!blob) throw new Error('编码失败')
-    return new File([blob], finalName, { type })
+    // 浏览器不支持目标格式时会静默回退（如个别环境不能编码 webp），按真实产出定后缀，避免名实不符
+    const outExt = MIME_EXT[blob.type || type] || p.ext
+    return new File([blob], `${p.base}.${outExt}`, { type: blob.type || type })
   } catch (e: any) {
     message.warning(`图片处理失败，已按原样上传：${e.message || e}`)
-    return withNewName(file, finalName)
+    return withNewName(file, `${p.base}.${p.ext}`)
   }
 }
 
-onMounted(loadBuckets)
+onMounted(() => {
+  loadBuckets()
+  loadWatermarkConfig()
+})
 </script>
 
 <template>
@@ -313,38 +443,71 @@ onMounted(loadBuckets)
     <n-tabs v-if="!isManage" type="line" default-value="upload" style="margin-top: 8px">
       <n-tab-pane name="upload" tab="上传图片">
         <n-collapse :default-expanded-names="['proc']" style="margin-bottom: 12px">
-          <n-collapse-item title="上传前处理：压缩 · 转 WebP · 重命名" name="proc">
-            <n-space vertical :size="10">
-              <n-space align="center">
-                <n-switch v-model:value="settings.enabled" />
-                <n-text>启用处理（关闭则原样上传）</n-text>
-              </n-space>
-              <template v-if="settings.enabled">
+          <n-collapse-item name="proc">
+            <template #header>上传前处理：压缩 · 转格式 · 重命名 · 水印</template>
+            <template #header-extra>
+              <n-text depth="3" style="font-size: 12px">{{ planSummary }}</n-text>
+            </template>
+            <n-space vertical :size="14">
+              <!-- 1. 图片压缩 -->
+              <div>
                 <n-space align="center">
-                  <n-switch v-model:value="settings.toWebp" />
-                  <n-text>自动转为 WebP 格式（体积更小）</n-text>
+                  <n-switch v-model:value="compress.enabled" />
+                  <n-text>图片压缩</n-text>
                 </n-space>
+                <template v-if="compress.enabled">
+                  <n-space align="center" :wrap="false" style="margin-top: 10px">
+                    <n-text style="width: 72px">压缩质量</n-text>
+                    <n-slider v-model:value="compress.quality" :min="10" :max="100" :disabled="!qualityApplies" style="width: 240px" />
+                    <n-text style="width: 40px">{{ compress.quality }}%</n-text>
+                    <n-text v-if="!qualityApplies" depth="3" style="font-size: 12px">PNG 为无损格式，质量参数不生效</n-text>
+                  </n-space>
+                  <n-space align="center" :wrap="false" style="margin-top: 10px">
+                    <n-text style="width: 72px">最大边长</n-text>
+                    <n-input-number v-model:value="compress.maxEdge" :min="0" :step="100" style="width: 180px" />
+                    <n-text depth="3" style="font-size: 12px">px，等比缩放；0 = 不限制</n-text>
+                  </n-space>
+                </template>
+              </div>
+
+              <!-- 2. 自动转格式 -->
+              <div class="proc-group">
                 <n-space align="center" :wrap="false">
-                  <n-text style="width: 72px">压缩质量</n-text>
-                  <n-slider v-model:value="settings.quality" :min="10" :max="100" style="width: 240px" />
-                  <n-text style="width: 40px">{{ settings.quality }}%</n-text>
+                  <n-switch v-model:value="format.enabled" />
+                  <n-text>自动转格式</n-text>
+                  <n-select v-model:value="format.target" :options="FORMATS" :disabled="!format.enabled" style="width: 210px" />
                 </n-space>
+                <n-text depth="3" style="font-size: 12px; display: block; margin: 6px 0 0 8px">
+                  仅对 png / jpg / webp / bmp / avif 生效，SVG 与 GIF 保持原样
+                </n-text>
+              </div>
+
+              <!-- 3. 重命名 -->
+              <div class="proc-group">
                 <n-space align="center" :wrap="false">
-                  <n-text style="width: 72px">最大边长</n-text>
-                  <n-input-number v-model:value="settings.maxEdge" :min="0" :step="100" style="width: 180px" />
-                  <n-text depth="3" style="font-size: 12px">px，等比缩放；0 = 不限制</n-text>
-                </n-space>
-                <n-space align="center" :wrap="false">
-                  <n-text style="width: 72px">重命名</n-text>
-                  <n-select v-model:value="settings.renameMode" :options="renameOptions" style="width: 150px" />
+                  <n-switch v-model:value="rename.enabled" />
+                  <n-text>重命名</n-text>
+                  <n-select v-model:value="rename.mode" :options="renameOptions" :disabled="!rename.enabled" style="width: 150px" />
                   <n-input
-                    v-if="settings.renameMode === 'prefix'"
-                    v-model:value="settings.prefix"
+                    v-if="rename.enabled && rename.mode === 'prefix'"
+                    v-model:value="rename.prefix"
                     placeholder="前缀文字"
                     style="width: 150px"
                   />
                 </n-space>
-              </template>
+              </div>
+
+              <!-- 4. 水印（配置在「图床设置 → 水印设置」里统一维护） -->
+              <div class="proc-group">
+                <n-space align="center" :wrap="false">
+                  <n-switch v-model:value="watermarkOn" />
+                  <n-text>添加水印</n-text>
+                  <n-button text type="primary" @click="gotoWatermarkSettings">水印设置</n-button>
+                  <n-text depth="3" style="font-size: 12px">
+                    {{ watermarkOn ? `当前水印：${watermarkText(watermarkConfig)}` : '点击左侧链接可修改水印内容与位置' }}
+                  </n-text>
+                </n-space>
+              </div>
             </n-space>
           </n-collapse-item>
         </n-collapse>
@@ -447,3 +610,11 @@ onMounted(loadBuckets)
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 三组处理项之间的分隔线，避免选项糊在一起 */
+.proc-group {
+  border-top: 1px dashed var(--border-soft, #efeff5);
+  padding-top: 12px;
+}
+</style>

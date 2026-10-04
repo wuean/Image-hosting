@@ -189,13 +189,7 @@ onMounted(async () => {
           <div v-else class="recent-grid">
             <div v-for="r in data.recent" :key="r.id" class="recent-card">
               <div class="recent-thumb">
-                <n-image
-                  v-if="r.url"
-                  :src="r.url"
-                  width="100%"
-                  height="100%"
-                  object-fit="cover"
-                />
+                <n-image v-if="r.url" :src="r.url" object-fit="cover" />
                 <div v-else class="recent-noimg">无外链</div>
               </div>
               <div class="recent-meta">
@@ -445,9 +439,21 @@ onMounted(async () => {
   transform: translateY(-3px);
   box-shadow: var(--shadow-card);
 }
+/* 缩略图框：固定高度 + 裁剪。
+   Naive UI 的 n-image 会包一层 div（.n-image），其高度默认跟随图片原始比例，
+   竖版/不规则图片会把它撑高并溢出、盖住下方文件名与按钮。
+   这里让包裹层绝对定位填满固定高度的框，图片再铺满并 cover 裁剪。 */
 .recent-thumb {
+  position: relative;
   height: 110px;
+  overflow: hidden;
   background: var(--track-bg);
+}
+.recent-thumb :deep(.n-image) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 .recent-thumb :deep(img) {
   display: block;

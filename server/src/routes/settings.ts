@@ -17,14 +17,41 @@ const DEFAULTS: Record<string, string> = {
   smtp_user: '',
   smtp_pass: '',
   smtp_from: '',
-  smtp_secure: 'true'
+  smtp_secure: 'true',
+  // 上传水印（全局一套，JSON 字符串）
+  watermark: JSON.stringify({ text: '', pos: 'br', tile: false, opacity: 35, size: 3, color: '#FAA07A', rotate: -30 })
 }
 
-// 公开信息（登录页 / App 外壳用）：绝不包含任何 SMTP 等敏感配置
-const PUBLIC_KEYS = ['site_name', 'logo_text', 'logo_url', 'login_bg_url']
+// 公开信息（登录页 / App 外壳 / 上传页读取水印参数用）：绝不包含任何 SMTP 等敏感配置
+const PUBLIC_KEYS = ['site_name', 'logo_text', 'logo_url', 'login_bg_url', 'watermark']
 // 敏感配置（仅管理员可见）：其中 smtp_pass 在库中加密存储
 const SENSITIVE_KEYS = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_secure']
 const ALLOWED_KEYS = [...PUBLIC_KEYS, ...SENSITIVE_KEYS]
+
+const WM_POSITIONS = ['tl', 'tc', 'tr', 'ml', 'mc', 'mr', 'bl', 'bc', 'br']
+
+/** 水印参数落到库里前先归一化，避免越界值把前端画布画坏 */
+function sanitizeWatermark(raw: any): string {
+  let o: any = {}
+  try {
+    o = typeof raw === 'string' ? JSON.parse(raw) : raw || {}
+  } catch {
+    o = {}
+  }
+  const num = (v: any, min: number, max: number, dflt: number) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : dflt
+  }
+  return JSON.stringify({
+    text: typeof o.text === 'string' ? o.text.slice(0, 40) : '',
+    pos: WM_POSITIONS.includes(o.pos) ? o.pos : 'br',
+    tile: !!o.tile,
+    opacity: num(o.opacity, 5, 100, 35),
+    size: num(o.size, 1, 12, 3),
+    color: /^#[0-9a-fA-F]{6}$/.test(String(o.color)) ? String(o.color) : '#FAA07A',
+    rotate: num(o.rotate, -90, 90, -30)
+  })
+}
 
 function getSettings(includeSensitive = false): Record<string, string> {
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[]
@@ -71,6 +98,10 @@ settingsRoutes.put('/', async (c) => {
       // 空字符串表示清除密码；否则加密存储
       const v = typeof raw === 'string' ? raw : ''
       updates[key] = v ? encrypt(v) : ''
+      continue
+    }
+    if (key === 'watermark') {
+      updates[key] = sanitizeWatermark(raw)
       continue
     }
     updates[key] = typeof raw === 'string' ? raw.trim() : String(raw ?? '')
