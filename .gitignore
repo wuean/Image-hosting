@@ -5,3 +5,7 @@ server/data/
 .env
 *.log
 .workbuddy/
+
+# 本地打包/部署产物（临时文件，不入库）
+update.tgz
+imgbed-deploy.tar.gz
