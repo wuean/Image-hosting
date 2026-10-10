@@ -6,6 +6,41 @@
 
 ---
 
+## 未发布 · 2026-10-10
+
+> 涉及文件：`server/src/routes/stats.ts`、`server/src/routes/buckets.ts`、`server/src/routes/images.ts`、
+> `server/src/lib/auth.ts`、`server/src/routes/auth.ts`、`server/src/index.ts`、`web/src/router.ts`
+
+### 修复
+
+- **管理员越权可见他人桶数据**（数据隔离缺陷）
+  - 现象：以管理员登录后，仪表盘「存储桶概览」「图片统计」「最近上传」以及「存储桶配置」列表中会混入其他用户的桶与图片。
+  - 根因：后端多处按 `me.role === 'admin'` 分支直接查全量数据（前端只是如实渲染）。
+  - 修复——**管理员 = 普通用户 + 用户管理 + 系统设置，数据层面不再有任何特权**：
+    - `stats.ts`：`accessibleBuckets()` 去掉 admin 分支，一律 `WHERE owner_id = ?`。
+    - `buckets.ts`：`GET /api/buckets`、`GET /api/buckets/export` 同样按 owner 过滤（导出原先会吐出全部用户的明文密钥）；
+      `getAccessibleBucket()` 改为 `WHERE id = ? AND owner_id = ?`，管理员不再能查看 / 修改 / 删除 / 测试他人的桶。
+    - `images.ts`：移除随之失效的 `bucket.owned` 判定（上传、批量删除）。
+  - 管理员保留的特权仅两处：`/api/auth/admin/*`（用户管理）与 `/api/settings/*`（系统设置）。
+
+- **鉴权加固：停用/删除账号不即时生效等 4 项**（同次越权排查发现）
+  - **停用/删除后 token 仍可用**：`authGuard` 原先只验 JWT 签名、从不查库，`is_active=0` 只挡新登录，
+    已有 token 照旧可用满 7 天（实测：停用后仍能以旧 token 200 访问 `/api/buckets`）。现在每请求回查一次账号，
+    账号不存在或已停用一律 401，并以库中 `role` 为准（改角色后旧 token 不再带旧权限）。
+  - **用户管理接口可作用于管理员账号**：`deactivate / resend-activation / DELETE` 原先都不校验目标角色，
+    任意管理员可停用或删除其他管理员，`deactivate` 连自己都能停（可把自己锁死）。现在对管理员目标返回 403
+    （与前端按钮已有禁用状态一致）；`PUT` 编辑保持开放，因为这是修改管理员用户名的唯一入口。
+  - **不存在的用户 id 静默返回 ok**：`activate / deactivate / DELETE` 补 404。
+  - **前端 `/admin/*` 无角色守卫**：`web/src/router.ts` 补按角色重定向，非管理员访问管理页直接回 `/images`
+    （后端本就强制鉴权，此处只是不再渲染空壳页）。
+
+### 文档
+
+- README 同步更正 5 处仍描述「管理员可见全部桶」的旧说明（功能特性、桶导入导出、用户与权限模型、API 概览），
+  并补充两条权限说明：**停用 / 删除账号即时生效（旧 token 立即失效）**、**管理员账号不可被停用或删除**。
+
+---
+
 ## 已发布 · 2026-10-04（commit `6010983`）
 
 > 涉及文件：`web/src/views/Login.vue`

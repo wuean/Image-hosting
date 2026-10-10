@@ -10,7 +10,7 @@
 
 - **多存储后端统一接入**：6 种存储类型，统一的上传 / 列表 / 删除 / 外链体验。
 - **多用户 + 邮箱激活**：注册需邮箱，激活后才能登录（未激活登录返回 `INACTIVE`）。
-- **桶级隔离**：用户只能查看和使用自己创建的桶；管理员可见全部桶但仅查看，不能删除他人桶内的实际远端文件。
+- **桶级隔离**：每个用户只能查看和使用自己创建的桶，**管理员也不例外**——管理员只比普通用户多「用户管理」与「系统设置」两项能力。
 - **流式上传**：服务端中转，请求体边收边传，大文件不会占满内存（先落临时文件再上传）。
 - **管理后台**：用户管理（激活/停用/编辑/删除/重发激活邮件）、系统设置（站点 branding、登录背景、SMTP）。
 - **邮件可配置**：SMTP 既可在 `server/.env` 配置，也可在后台「系统设置 → 邮件服务」直接配置，支持发送测试邮件。
@@ -147,7 +147,7 @@ cd ../server && npm run start   # 后端静态托管 dist/，访问 http://local
 
 在「存储桶配置」页右上角提供两个按钮，用于对桶配置做备份与迁移：
 
-- **导出桶设置**：点击后浏览器下载 `imgbed-buckets-YYYY-MM-DD.json`，内容为当前用户（管理员为全部用户）所有桶的**明文配置**，包括各存储商的密钥（AccessKey / Secret 等）。⚠️ 该文件含有敏感凭据，请妥善保管、不要公开分享。
+- **导出桶设置**：点击后浏览器下载 `imgbed-buckets-YYYY-MM-DD.json`，内容为**当前用户自己**所有桶的**明文配置**，包括各存储商的密钥（AccessKey / Secret 等）。⚠️ 该文件含有敏感凭据，请妥善保管、不要公开分享。
 - **导入桶设置**：点击选择本地 JSON 文件 → 二次确认 → 系统逐桶处理：
   - **同名桶（按 `name` 匹配）**：用文件中的配置**覆盖更新**（如只想改个别字段，可将未变字段填 `******`，导入时会保留原桶该字段的值，避免误覆盖）。
   - **新名称桶**：直接**新建**。
@@ -195,8 +195,10 @@ cd ../server && npm run start   # 后端静态托管 dist/，访问 http://local
   - 只能查看 / 上传 / 删除**自己创建**的桶。
   - 上传与远端文件删除严格锁定 `bucket.owner_id === 当前用户`。
 - **管理员（admin）**
-  - 可见全部用户的桶（仅查看，不可删除他人远端文件）。
-  - 用户管理页可：激活 / 停用 / 编辑（用户名、邮箱）/ 删除（级联删除本地记录，不删远端文件；不能删除自己）/ 重发激活邮件。
+  - 数据层面与普通用户**完全一致**：只能查看 / 上传 / 删除自己创建的桶；仪表盘的存储桶概览、图片统计与最近上传也只包含自己的数据，看不到他人的任何桶与图片。
+  - 额外能力仅两项：**用户管理**（激活 / 停用 / 编辑用户名与邮箱 / 删除 / 重发激活邮件）与**系统设置**（站点 branding、SMTP、全局水印）。
+- **权限即时生效**：鉴权中间件对每个请求都回查一次账号，因此**停用 / 删除账号后，其已签发的 token 立即失效**（不必等 7 天过期），角色变更同样即时生效。
+- **管理员账号受保护**：管理员账号**不可被停用或删除**（避免误删最后一个管理员或互相锁死）；编辑用户名 / 邮箱仍可用，这是修改管理员用户名的唯一入口。
 - **注册流程**：填写用户名 + 邮箱 + 密码 → 发送激活邮件（含 `PUBLIC_BASE_URL` 链接）→ 点击激活 → 才能登录。
 - 关闭自助注册：在 `server/.env` 设置 `ALLOW_REGISTER=false`。
 
@@ -222,21 +224,21 @@ cd ../server && npm run start   # 后端静态托管 dist/，访问 http://local
 | POST | `/api/auth/change-password` | 修改密码（需登录） |
 | GET  | `/api/auth/admin/users` | 用户列表（admin） |
 | POST | `/api/auth/admin/users/:id/activate` | 激活用户（admin） |
-| POST | `/api/auth/admin/users/:id/deactivate` | 停用用户（admin） |
+| POST | `/api/auth/admin/users/:id/deactivate` | 停用用户（admin；管理员目标返回 403） |
 | PUT  | `/api/auth/admin/users/:id` | 编辑用户名/邮箱（admin） |
-| POST | `/api/auth/admin/users/:id/resend-activation` | 重发激活邮件（admin） |
-| DELETE | `/api/auth/admin/users/:id` | 删除用户（admin，不能删自己） |
+| POST | `/api/auth/admin/users/:id/resend-activation` | 重发激活邮件（admin；管理员目标返回 403） |
+| DELETE | `/api/auth/admin/users/:id` | 删除用户（admin；不能删自己或管理员） |
 
 ### 存储桶 `/api/buckets`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET  | `/api/buckets` | 当前用户可见桶（admin 看全部） |
+| GET  | `/api/buckets` | 当前用户自己的桶（数据按用户隔离，admin 同样只看自己） |
 | POST | `/api/buckets` | 创建桶（type / name / config / keyPrefix） |
 | PUT  | `/api/buckets/:id` | 更新桶 |
 | DELETE | `/api/buckets/:id` | 删除桶（仅删本地记录，不删远端文件） |
 | POST | `/api/buckets/:id/test` | 连通性测试 |
-| GET  | `/api/buckets/export` | 导出当前用户（admin 为全部）桶的明文 JSON 配置（含密钥） |
+| GET  | `/api/buckets/export` | 导出**当前用户自己**桶的明文 JSON 配置（含密钥） |
 | POST | `/api/buckets/import` | 从 JSON 文件导入：同名桶更新、新桶创建，密钥重新加密入库；`******` 占位符表示保留原值 |
 
 ### 图片 `/api/images`

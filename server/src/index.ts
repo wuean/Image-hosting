@@ -26,6 +26,9 @@ const app = new Hono()
 const corsOrigin = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
   : process.env.PUBLIC_BASE_URL || '*'
+if (!process.env.CORS_ORIGIN && !process.env.PUBLIC_BASE_URL) {
+  console.warn('[cors] 未配置 PUBLIC_BASE_URL / CORS_ORIGIN，已放开所有来源，仅建议本地开发使用')
+}
 app.use(
   '/api/*',
   cors({

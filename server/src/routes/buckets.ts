@@ -25,17 +25,13 @@ export function getBucketWithConfig(id: number) {
 }
 
 /**
- * 按当前用户校验桶的可访问性：
- * - 桶主本人：可访问，且 owned=true
- * - 管理员：可访问所有桶（用于查看/协助），但 owned 取决于是否本人拥有
- * - 其他用户：不可访问，返回 null
+ * 按当前用户校验桶的可访问性：只有桶主本人可访问，否则返回 null。
+ * 数据按用户隔离，管理员不例外——管理员只多出「用户管理 / 系统设置」两项能力。
  */
 export function getAccessibleBucket(id: number, me: JwtUser) {
-  const row = db.prepare('SELECT * FROM buckets WHERE id = ?').get(id) as any
+  const row = db.prepare('SELECT * FROM buckets WHERE id = ? AND owner_id = ?').get(id, me.uid) as any
   if (!row) return null
-  const owned = row.owner_id === me.uid
-  if (me.role !== 'admin' && !owned) return null
-  return { ...row, config: JSON.parse(decrypt(row.config_enc)), owned }
+  return { ...row, config: JSON.parse(decrypt(row.config_enc)) }
 }
 
 // 当前用户的默认图床（上传时自动选中，免每次手动选择）
@@ -58,10 +54,7 @@ bucketRoutes.put('/default', async (c) => {
 
 bucketRoutes.get('/', (c) => {
   const me = c.get('user') as JwtUser
-  const rows =
-    me.role === 'admin'
-      ? (db.prepare('SELECT * FROM buckets ORDER BY id').all() as any[])
-      : (db.prepare('SELECT * FROM buckets WHERE owner_id = ? ORDER BY id').all(me.uid) as any[])
+  const rows = db.prepare('SELECT * FROM buckets WHERE owner_id = ? ORDER BY id').all(me.uid) as any[]
   return c.json(
     rows.map((r) => ({
       id: r.id,
@@ -128,13 +121,10 @@ bucketRoutes.post('/:id/test', async (c) => {
 })
 
 // ---- 桶设置导入 / 导出 ----
-// 导出：把当前用户（或管理员全部）的桶配置以明文 JSON 返回，含解密后的密钥
+// 导出：把当前用户自己的桶配置以明文 JSON 返回，含解密后的密钥
 bucketRoutes.get('/export', (c) => {
   const me = c.get('user') as JwtUser
-  const rows =
-    me.role === 'admin'
-      ? (db.prepare('SELECT * FROM buckets ORDER BY id').all() as any[])
-      : (db.prepare('SELECT * FROM buckets WHERE owner_id = ? ORDER BY id').all(me.uid) as any[])
+  const rows = db.prepare('SELECT * FROM buckets WHERE owner_id = ? ORDER BY id').all(me.uid) as any[]
   const buckets = rows.map((r) => ({
     name: r.name,
     type: r.type,

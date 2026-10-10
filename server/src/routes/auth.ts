@@ -147,12 +147,18 @@ authRoutes.get('/admin/users', (c) => {
 
 authRoutes.post('/admin/users/:id/activate', (c) => {
   const id = Number(c.req.param('id'))
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(id)
+  if (!user) return c.json({ error: '用户不存在' }, 404)
   db.prepare("UPDATE users SET is_active = 1, activation_token = NULL, activated_at = datetime('now') WHERE id = ?").run(id)
   return c.json({ ok: true })
 })
 
 authRoutes.post('/admin/users/:id/deactivate', (c) => {
   const id = Number(c.req.param('id'))
+  const user = db.prepare('SELECT id, role FROM users WHERE id = ?').get(id) as any
+  if (!user) return c.json({ error: '用户不存在' }, 404)
+  // 管理员账号不可被停用：既防互相锁死，也防把自己锁在门外
+  if (user.role === 'admin') return c.json({ error: '不能停用管理员账号' }, 403)
   db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(id)
   return c.json({ ok: true })
 })
@@ -188,6 +194,7 @@ authRoutes.post('/admin/users/:id/resend-activation', async (c) => {
   const id = Number(c.req.param('id'))
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any
   if (!user) return c.json({ error: '用户不存在' }, 404)
+  if (user.role === 'admin') return c.json({ error: '管理员账号无需激活' }, 403)
   if (user.is_active) return c.json({ error: '该账号已激活，无需重发' }, 400)
 
   const activation_token = crypto.randomBytes(32).toString('hex')
@@ -200,6 +207,10 @@ authRoutes.delete('/admin/users/:id', (c) => {
   const me = c.get('user') as JwtUser
   const id = Number(c.req.param('id'))
   if (id === me.uid) return c.json({ error: '不能删除当前登录的账号' }, 400)
+  const target = db.prepare('SELECT role FROM users WHERE id = ?').get(id) as any
+  if (!target) return c.json({ error: '用户不存在' }, 404)
+  // 管理员账号不可被删除，避免互相删除或误删最后一个管理员
+  if (target.role === 'admin') return c.json({ error: '不能删除管理员账号' }, 403)
   db.prepare('DELETE FROM images WHERE bucket_id IN (SELECT id FROM buckets WHERE owner_id = ?)').run(id)
   db.prepare('DELETE FROM buckets WHERE owner_id = ?').run(id)
   db.prepare('DELETE FROM users WHERE id = ?').run(id)

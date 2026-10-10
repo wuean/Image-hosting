@@ -57,7 +57,6 @@ imageRoutes.post('/upload', async (c) => {
   const bucketId = Number(c.req.query('bucketId'))
   const bucket = getAccessibleBucket(bucketId, me)
   if (!bucket) return c.json({ error: '桶不存在或无权限' }, 404)
-  if (!bucket.owned) return c.json({ error: '只能上传到你自己的存储桶' }, 403)
 
   const contentType = c.req.header('content-type') || ''
   if (!contentType.toLowerCase().includes('multipart/form-data')) {
@@ -201,13 +200,12 @@ imageRoutes.get('/browse', async (c) => {
   }
 })
 
-/** 批量删除（仅桶主可删除远端实际文件，管理员也不行） */
+/** 批量删除（仅桶主可删除远端实际文件） */
 imageRoutes.post('/delete', async (c) => {
   const me = c.get('user') as JwtUser
   const { bucketId, keys } = await c.req.json<{ bucketId: number; keys: string[] }>()
   const bucket = getAccessibleBucket(Number(bucketId), me)
   if (!bucket) return c.json({ error: '桶不存在或无权限' }, 404)
-  if (!bucket.owned) return c.json({ error: '只有桶主可以删除桶内的实际文件' }, 403)
   if (!keys?.length) return c.json({ error: '未指定文件' }, 400)
   try {
     await createAdapter(bucket.type, bucket.config).remove(keys)

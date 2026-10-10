@@ -7,12 +7,9 @@ import { createAdapter } from '../adapters/index.js'
 export const statsRoutes = new Hono()
 statsRoutes.use('*', authGuard)
 
-/** 当前用户可见的桶（含解密后的配置），admin 看全部 */
+/** 当前用户自己的桶（含解密后的配置）。数据按用户隔离，管理员不例外。 */
 function accessibleBuckets(me: JwtUser) {
-  const rows =
-    me.role === 'admin'
-      ? (db.prepare('SELECT * FROM buckets').all() as any[])
-      : (db.prepare('SELECT * FROM buckets WHERE owner_id = ?').all(me.uid) as any[])
+  const rows = db.prepare('SELECT * FROM buckets WHERE owner_id = ?').all(me.uid) as any[]
   return rows.map((r) => ({ ...r, config: JSON.parse(decrypt(r.config_enc)) }))
 }
 
