@@ -6,7 +6,7 @@
 
 ---
 
-## 未发布 · 2026-10-10
+## 已发布 · 2026-10-10（commit `a733246`）
 
 > 涉及文件：`server/src/routes/stats.ts`、`server/src/routes/buckets.ts`、`server/src/routes/images.ts`、
 > `server/src/lib/auth.ts`、`server/src/routes/auth.ts`、`server/src/index.ts`、`web/src/router.ts`
