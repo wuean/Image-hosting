@@ -18,6 +18,7 @@
 - **存储桶导入导出**：可将当前用户的全部桶配置（含密钥明文）一键导出为 JSON 文件，用于备份或跨实例迁移；也能从 JSON 文件批量导入——同名桶更新配置、新桶创建，密钥重新加密入库。
 - **上传前处理（4 组独立开关）**：图片压缩（质量 + 最长边限制）、自动转格式（WebP / JPEG / PNG，默认 WebP）、重命名（时间戳 / 随机 / 自定义前缀，默认时间戳）、加水印，四者互不耦合、可任意组合；前三组参数记在浏览器本地，刷新后保持上次选择。
 - **图片水印**：前端 Canvas 合成，文字、九宫格位置、平铺、不透明度、字号（图宽百分比）、颜色、旋转均可调；全局一套配置，管理员在「图床设置 → 水印设置」维护，带实时预览。
+- **站点访问统计**：内置轻量统计（零第三方依赖），记录站点页面 PV/UV、外部来源与登录 IP，管理员在「访问统计」页查看，支持 7 / 30 / 90 天切换。仅统计站点页面访问，图片外链直连对象存储不计入。
 
 ## 技术栈
 
@@ -99,6 +100,9 @@ MAIL_FROM=you@example.com
 # 站点
 PUBLIC_BASE_URL=http://localhost:3000
 # ALLOW_REGISTER=false   # 取消注释可关闭自助注册
+
+# 访问统计：访问记录保留天数（默认 180，设为 0 表示不自动清理）
+# ANALYTICS_RETENTION_DAYS=180
 ```
 
 > `PUBLIC_BASE_URL` 决定激活邮件里链接的域名。部署到真实域名后请改为对应地址。
@@ -256,6 +260,13 @@ cd ../server && npm run start   # 后端静态托管 dist/，访问 http://local
 |------|------|------|
 | GET  | `/api/stats` | 桶分布、图片总数/体积、本月上传、最近上传（限登录用户可见范围） |
 
+### 访问统计 `/api/analytics`
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/analytics/track` | **公开**：上报一次页面访问（`{ path, referer }`），用于 PV/UV 统计 |
+| GET  | `/api/analytics?days=` | 管理员：概况 PV/UV、按天趋势、外部来源 Top、登录 IP 列表（`days` 默认 30，上限 365） |
+
 ### 系统设置 `/api/settings`
 
 | 方法 | 路径 | 说明 |
@@ -273,6 +284,8 @@ SQLite，单文件 `server/data/imgbed.db`。核心表：
 - **buckets**：`id, name, type, config_enc（AES 加密的 JSON 配置）, key_prefix, owner_id, created_at`
 - **images**：`id, bucket_id, user_id, key, original_name, size, mime, created_at`
 - **settings**：`key, value, updated_at`（site_name / logo_* / login_bg_url / smtp_* / watermark）
+- **page_views**：`id, path, referer, visitor, created_at`（站点访问统计；`visitor` 为 `sha256(ip|ua|密钥)`，不存原始 IP）
+- **login_logs**：`id, user_id, username, ip, ua, created_at`（登录成功记录，供「登录 IP」列表展示）
 
 桶配置与 SMTP 密码均以 **AES-256-GCM**（主密钥 `MASTER_KEY`）加密存储，明文不下发前端。
 
@@ -284,10 +297,11 @@ SQLite，单文件 `server/data/imgbed.db`。核心表：
 - 远端文件删除严格按「桶主」身份锁定，管理员也无法越权删除他人远端文件。
 - 删除用户仅级联删除本地数据库记录，**不会触碰远端存储中的实际文件**（避免误删）。
 - 生产环境强烈建议使用 HTTPS（尤其是 SMTP 密码回填给管理员表单的场景）。
+- 访问统计中的 `page_views` 仅保存访客指纹哈希（`sha256(ip|ua|密钥)`），**不落库原始 IP**；仅登录成功时会在 `login_logs` 记录来源 IP，供管理员在「访问统计」页查看，可用 `ANALYTICS_RETENTION_DAYS` 控制保留期。
 
 ## 已知限制与后续计划
 
-已完成：多用户 + 邮箱激活、6 种存储后端、流式上传、上传前处理（压缩 / 转格式 / 重命名）、图片水印、仪表盘统计、暗黑主题、登录壁纸、系统设置（含 SMTP）、存储桶配置导入/导出。
+已完成：多用户 + 邮箱激活、6 种存储后端、流式上传、上传前处理（压缩 / 转格式 / 重命名）、图片水印、仪表盘统计、站点访问统计、暗黑主题、登录壁纸、系统设置（含 SMTP）、存储桶配置导入/导出。
 
 待办（按优先级）：
 

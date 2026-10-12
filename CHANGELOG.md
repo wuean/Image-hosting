@@ -6,6 +6,23 @@
 
 ---
 
+## 未发布 · 2026-10-12
+
+> 涉及文件：`server/src/db.ts`、`server/src/lib/net.ts`（新增）、`server/src/routes/analytics.ts`（新增）、
+> `server/src/routes/auth.ts`、`server/src/index.ts`、`web/src/api.ts`、`web/src/router.ts`、
+> `web/src/views/Analytics.vue`（新增）、`web/src/App.vue`
+
+### 新增
+
+- **站点访问统计（自建轻量，零第三方依赖）**
+  - 后端新增 `POST /api/analytics/track`（公开）与 `GET /api/analytics`（管理员）；前端在 `router.afterEach` 用 `sendBeacon` 上报每次页面访问，静默失败、不阻塞导航。
+  - 数据表 `page_views` 只存 `path / referer / visitor`，其中 `visitor = sha256(ip|ua|密钥)`，**不落库原始 IP**；UV 由区间内 `COUNT(DISTINCT visitor)` 得出。
+  - 新增仅管理员可见的「访问统计」页（`/admin/analytics`）：今日 / 区间 PV·UV 概况卡、近 N 天 PV/UV 纯 CSS 趋势图、外部来源 Top，支持 7 / 30 / 90 天切换。
+  - 数据表 `login_logs`：登录成功时记录账号与来源 IP，统计页以「登录 IP」列表展示（最新 20 条）。
+  - 新增环境变量 `ANALYTICS_RETENTION_DAYS`（默认 180，0=不清理），启动时清理过期的 `page_views` 与 `login_logs`。
+
+---
+
 ## 已发布 · 2026-10-10（commit `a733246`）
 
 > 涉及文件：`server/src/routes/stats.ts`、`server/src/routes/buckets.ts`、`server/src/routes/images.ts`、

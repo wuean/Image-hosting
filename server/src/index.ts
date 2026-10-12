@@ -19,6 +19,7 @@ import { bucketRoutes } from './routes/buckets.js'
 import { imageRoutes } from './routes/images.js'
 import { statsRoutes } from './routes/stats.js'
 import { settingsRoutes } from './routes/settings.js'
+import { analyticsRoutes } from './routes/analytics.js'
 
 const app = new Hono()
 // CORS：默认仅允许本站域名（PUBLIC_BASE_URL）；可用 CORS_ORIGIN 放开（逗号分隔多个源）；
@@ -63,6 +64,7 @@ app.route('/api/buckets', bucketRoutes)
 app.route('/api/images', imageRoutes)
 app.route('/api/stats', statsRoutes)
 app.route('/api/settings', settingsRoutes)
+app.route('/api/analytics', analyticsRoutes)
 
 app.use('/*', serveStatic({ root: WEB_DIST }))
 app.get('*', serveStatic({ path: path.join(WEB_DIST, 'index.html') }))

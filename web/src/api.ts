@@ -23,5 +23,23 @@ export const api = {
   post: (path: string, body?: any) => request(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
   put: (path: string, body?: any) => request(path, { method: 'PUT', body: JSON.stringify(body ?? {}) }),
   del: (path: string) => request(path, { method: 'DELETE' }),
-  upload: (path: string, formData: FormData) => request(path, { method: 'POST', body: formData })
+  upload: (path: string, formData: FormData) => request(path, { method: 'POST', body: formData }),
+  // 站点访问上报：尽力而为、静默失败，绝不影响页面
+  track: (path: string) => {
+    try {
+      const payload = JSON.stringify({ path, referer: document.referrer || '' })
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/track', new Blob([payload], { type: 'application/json' }))
+      } else {
+        fetch('/api/analytics/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {})
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }
 }

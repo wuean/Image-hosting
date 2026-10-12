@@ -39,6 +39,24 @@ CREATE TABLE IF NOT EXISTS images (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_images_bucket ON images(bucket_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS page_views (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  path TEXT NOT NULL,
+  referer TEXT,
+  visitor TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pv_created ON page_views(created_at);
+CREATE INDEX IF NOT EXISTS idx_pv_path ON page_views(path);
+CREATE TABLE IF NOT EXISTS login_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  username TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  ua TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_login_created ON login_logs(created_at);
 `)
 
 // ---- 增量迁移：多用户 + 邮箱激活所需字段（兼容已存在的库）----
@@ -94,3 +112,13 @@ seedSetting('smtp_user', '')
 seedSetting('smtp_pass', '')
 seedSetting('smtp_from', '')
 seedSetting('smtp_secure', 'true')
+
+// ---- 访问统计保留期：启动时清理一次过期记录（ANALYTICS_RETENTION_DAYS，默认 180，0=不清理）----
+const retentionDays = Number(process.env.ANALYTICS_RETENTION_DAYS ?? '180')
+if (Number.isFinite(retentionDays) && retentionDays > 0) {
+  const removed = db
+    .prepare("DELETE FROM page_views WHERE created_at < datetime('now', ?)")
+    .run(`-${retentionDays} days`).changes
+  db.prepare("DELETE FROM login_logs WHERE created_at < datetime('now', ?)").run(`-${retentionDays} days`)
+  if (removed) console.log(`[analytics] 已清理 ${removed} 条超过 ${retentionDays} 天的访问记录`)
+}

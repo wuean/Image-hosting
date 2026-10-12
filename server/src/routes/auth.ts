@@ -4,6 +4,7 @@ import { db } from '../db.js'
 import { verifyPassword, hashPassword } from '../lib/crypto.js'
 import { signToken, authGuard, requireAdmin, type JwtUser } from '../lib/auth.js'
 import { sendActivationEmail } from '../lib/mail.js'
+import { clientIp } from '../lib/net.js'
 
 export const authRoutes = new Hono()
 
@@ -17,6 +18,13 @@ authRoutes.post('/login', async (c) => {
     return c.json({ error: '账号未激活，请先激活注册邮箱后再登录', code: 'INACTIVE' }, 401)
   }
   const token = await signToken(user)
+  // 记录登录 IP（供「访问统计」页展示）
+  db.prepare('INSERT INTO login_logs (user_id, username, ip, ua) VALUES (?, ?, ?, ?)').run(
+    user.id,
+    user.username,
+    clientIp(c),
+    (c.req.header('user-agent') || '').slice(0, 300)
+  )
   return c.json({
     token,
     user: {

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { currentUser } from './user'
+import { api } from './api'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -14,16 +15,22 @@ export const router = createRouter({
     { path: '/buckets', component: () => import('./views/Buckets.vue') },
     { path: '/profile', component: () => import('./views/Profile.vue') },
     { path: '/admin/users', component: () => import('./views/AdminUsers.vue') },
+    { path: '/admin/analytics', component: () => import('./views/Analytics.vue') },
     { path: '/admin/settings', component: () => import('./views/SystemSettings.vue') }
   ]
 })
 
 const PUBLIC_PATHS = ['/login', '/register', '/activate']
-const ADMIN_PATHS = ['/admin/users', '/admin/settings']
+const ADMIN_PATHS = ['/admin/users', '/admin/analytics', '/admin/settings']
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
   if (!token && !PUBLIC_PATHS.includes(to.path)) return '/login'
   if (token && to.path === '/login') return '/images'
   // 管理页仅管理员可进（后端已强制鉴权，这里只是别让普通用户进到空壳页）
   if (ADMIN_PATHS.includes(to.path) && currentUser.value?.role !== 'admin') return '/images'
+})
+
+// 站点访问统计：每次页面切换上报一次（静默，不阻塞导航）
+router.afterEach((to) => {
+  api.track(to.path)
 })

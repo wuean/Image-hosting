@@ -92,6 +92,7 @@ const menuOptions = computed(() => {
     { label: '图床设置', key: '/buckets' }
   ]
   if (isAdmin.value) {
+    base.push({ label: '访问统计', key: '/admin/analytics' })
     base.push({ label: '用户管理', key: '/admin/users' })
     base.push({ label: '系统设置', key: '/admin/settings' })
   }
