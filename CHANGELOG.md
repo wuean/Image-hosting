@@ -6,7 +6,7 @@
 
 ---
 
-## 未发布 · 2026-10-12
+## 已发布 · 2026-10-12（commit `dcf9098`）
 
 > 涉及文件：`server/src/db.ts`、`server/src/lib/net.ts`（新增）、`server/src/routes/analytics.ts`（新增）、
 > `server/src/routes/auth.ts`、`server/src/routes/settings.ts`、`server/src/index.ts`、`web/src/api.ts`、
