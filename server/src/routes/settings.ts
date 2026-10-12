@@ -19,11 +19,13 @@ const DEFAULTS: Record<string, string> = {
   smtp_from: '',
   smtp_secure: 'true',
   // 上传水印（全局一套，JSON 字符串）
-  watermark: JSON.stringify({ text: '', pos: 'br', tile: false, opacity: 35, size: 3, color: '#FAA07A', rotate: -30 })
+  watermark: JSON.stringify({ text: '', pos: 'br', tile: false, opacity: 35, size: 3, color: '#FAA07A', rotate: -30 }),
+  // 第三方统计代码（原样注入站点页面，如 Umami / Plausible / 百度统计的 <script> 片段）
+  analytics_snippet: ''
 }
 
 // 公开信息（登录页 / App 外壳 / 上传页读取水印参数用）：绝不包含任何 SMTP 等敏感配置
-const PUBLIC_KEYS = ['site_name', 'logo_text', 'logo_url', 'login_bg_url', 'watermark']
+const PUBLIC_KEYS = ['site_name', 'logo_text', 'logo_url', 'login_bg_url', 'watermark', 'analytics_snippet']
 // 敏感配置（仅管理员可见）：其中 smtp_pass 在库中加密存储
 const SENSITIVE_KEYS = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_secure']
 const ALLOWED_KEYS = [...PUBLIC_KEYS, ...SENSITIVE_KEYS]
@@ -102,6 +104,11 @@ settingsRoutes.put('/', async (c) => {
     }
     if (key === 'watermark') {
       updates[key] = sanitizeWatermark(raw)
+      continue
+    }
+    if (key === 'analytics_snippet') {
+      // 原样保留（含换行），仅截断长度，避免超长内容拖垮页面
+      updates[key] = (typeof raw === 'string' ? raw : String(raw ?? '')).slice(0, 5000)
       continue
     }
     updates[key] = typeof raw === 'string' ? raw.trim() : String(raw ?? '')

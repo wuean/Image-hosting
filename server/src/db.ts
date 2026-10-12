@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS page_views (
   path TEXT NOT NULL,
   referer TEXT,
   visitor TEXT NOT NULL,
+  ip_hash TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_pv_created ON page_views(created_at);
@@ -58,6 +59,10 @@ CREATE TABLE IF NOT EXISTS login_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_login_created ON login_logs(created_at);
 `)
+
+// ---- 增量迁移：访问记录补充「仅含 IP 的哈希」（visitor 混了 UA，无法用于统计去重访问 IP）----
+const pvCols = (db.prepare('PRAGMA table_info(page_views)').all() as { name: string }[]).map((r) => r.name)
+if (!pvCols.includes('ip_hash')) db.exec('ALTER TABLE page_views ADD COLUMN ip_hash TEXT')
 
 // ---- 增量迁移：多用户 + 邮箱激活所需字段（兼容已存在的库）----
 const userCols = (db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((r) => r.name)

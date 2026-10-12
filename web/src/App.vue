@@ -66,6 +66,23 @@ const isLogin = computed(() => route.path === '/login' || route.path === '/regis
 const siteName = ref('图床管理')
 const logoText = ref('图')
 const logoUrl = ref('')
+
+/** 注入第三方统计代码：innerHTML 插入的 <script> 不会执行，需重建为真实节点 */
+function injectAnalytics(code: string) {
+  if (!code || document.getElementById('third-party-analytics')) return
+  const holder = document.createElement('div')
+  holder.id = 'third-party-analytics'
+  holder.style.display = 'none'
+  holder.innerHTML = code
+  holder.querySelectorAll('script').forEach((old) => {
+    const s = document.createElement('script')
+    for (const a of Array.from(old.attributes)) s.setAttribute(a.name, a.value)
+    s.text = old.textContent || ''
+    old.replaceWith(s)
+  })
+  document.body.appendChild(holder)
+}
+
 async function loadSettings() {
   try {
     const res = await api.get('/api/settings')
@@ -74,6 +91,7 @@ async function loadSettings() {
       logoText.value = res.settings.logo_text || logoText.value
       logoUrl.value = res.settings.logo_url || ''
       document.title = siteName.value
+      injectAnalytics(res.settings.analytics_snippet || '')
     }
   } catch {
     // 保持默认

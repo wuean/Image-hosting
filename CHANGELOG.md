@@ -9,17 +9,21 @@
 ## 未发布 · 2026-10-12
 
 > 涉及文件：`server/src/db.ts`、`server/src/lib/net.ts`（新增）、`server/src/routes/analytics.ts`（新增）、
-> `server/src/routes/auth.ts`、`server/src/index.ts`、`web/src/api.ts`、`web/src/router.ts`、
-> `web/src/views/Analytics.vue`（新增）、`web/src/App.vue`
+> `server/src/routes/auth.ts`、`server/src/routes/settings.ts`、`server/src/index.ts`、`web/src/api.ts`、
+> `web/src/router.ts`、`web/src/views/Analytics.vue`（新增）、`web/src/views/SystemSettings.vue`、`web/src/App.vue`
 
 ### 新增
 
 - **站点访问统计（自建轻量，零第三方依赖）**
   - 后端新增 `POST /api/analytics/track`（公开）与 `GET /api/analytics`（管理员）；前端在 `router.afterEach` 用 `sendBeacon` 上报每次页面访问，静默失败、不阻塞导航。
-  - 数据表 `page_views` 只存 `path / referer / visitor`，其中 `visitor = sha256(ip|ua|密钥)`，**不落库原始 IP**；UV 由区间内 `COUNT(DISTINCT visitor)` 得出。
-  - 新增仅管理员可见的「访问统计」页（`/admin/analytics`）：今日 / 区间 PV·UV 概况卡、近 N 天 PV/UV 纯 CSS 趋势图、外部来源 Top，支持 7 / 30 / 90 天切换。
+  - 数据表 `page_views` 只存 `path / referer / visitor / ip_hash`，其中 `visitor = sha256(ip|ua|密钥)`（用于 UV）、`ip_hash = sha256(ip|密钥)`（用于去重 IP 数），**均不落库原始 IP**。
+  - 新增仅管理员可见的「访问统计」页（`/admin/analytics`）：浏览量（PV）/ 访客数（UV）/ IP 数 三张概况卡 + 纯 CSS 趋势图（今日按小时、其余按天）+ 外部来源 Top + 登录 IP 列表；顶部范围切换（今日 / 7 / 30 / 90 天）统一控制卡片、趋势与两个列表。其中「IP 数」为**访问过站点的去重 IP**，与「登录 IP」列表不是同一份数据。
   - 数据表 `login_logs`：登录成功时记录账号与来源 IP，统计页以「登录 IP」列表展示（最新 20 条）。
   - 新增环境变量 `ANALYTICS_RETENTION_DAYS`（默认 180，0=不清理），启动时清理过期的 `page_views` 与 `login_logs`。
+- **系统设置支持第三方统计代码**
+  - 新增设置项 `analytics_snippet`（属公开配置，随 `/api/settings` 一并下发，长度上限 5000 字符）：管理员可在「系统设置 → 第三方统计」粘贴 Umami / Plausible / 百度统计等平台的代码片段。
+  - 前端 `App.vue` 启动时读取并注入到所有站点页面（含登录页）：`<script>` 用 `innerHTML` 不会执行，故重建为真实节点后插入，其余节点（如像素 `<img>`）按原样保留。
+  - 与内置「访问统计」互不影响：前者数据在第三方平台查看，后者数据留在本库。
 
 ---
 

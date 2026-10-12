@@ -5,7 +5,7 @@ import { api } from '../api'
 
 const message = useMessage()
 const loading = ref(true)
-const days = ref(30)
+const days = ref(0)
 const data = ref<any>(null)
 
 async function load() {
@@ -21,15 +21,17 @@ async function load() {
 watch(days, load)
 onMounted(load)
 
-const summary = computed(() => data.value?.summary || { todayPV: 0, todayUV: 0, rangePV: 0, rangeUV: 0 })
-const daily = computed<any[]>(() => data.value?.daily || [])
-const maxVal = computed(() => Math.max(1, ...daily.value.map((d: any) => Math.max(d.pv, d.uv))))
+const summary = computed(() => data.value?.summary || { pv: 0, uv: 0, ip: 0 })
+const series = computed<any[]>(() => data.value?.series || [])
+const maxVal = computed(() => Math.max(1, ...series.value.map((d: any) => Math.max(d.pv, d.uv))))
+// 当前所选范围的展示名（0 = 今日）
+const rangeLabel = computed(() => (days.value === 0 ? '今日' : `近 ${days.value} 天`))
+const trendUnit = computed(() => (days.value === 0 ? '分时' : '按天'))
 
 const STAT_ICONS: Record<string, string> = {
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
-  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
-  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.4 3.1-6 7-6s7 2.6 7 6"/><path d="M16 5.2a3.5 3.5 0 0 1 0 6.6M18 20c0-2.2-.7-4-1.9-5.3"/></svg>'
+  ip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z"/></svg>'
 }
 
 function barPct(v: number) {
@@ -38,10 +40,12 @@ function barPct(v: number) {
 function fmtTime(s: string) {
   return (s || '').replace('T', ' ').slice(5, 16)
 }
-// x 轴标签密度：≤30 天每 5 天一个，>30 天每 10 天一个
+// x 轴标签密度：≤12 格全显示；小时视图每 3 小时一个；更长的按 5 / 10 天间隔
 function showLabel(i: number) {
-  const step = daily.value.length > 30 ? 10 : 5
-  return i % step === 0
+  const n = series.value.length
+  if (n <= 12) return true
+  if (n <= 24) return i % 3 === 0
+  return i % (n > 30 ? 10 : 5) === 0
 }
 </script>
 
@@ -51,58 +55,55 @@ function showLabel(i: number) {
       <section class="hero">
         <div>
           <p class="hero-title">站点访问统计</p>
-          <p class="hero-sub">仅统计站点页面访问 · 图片外链直连存储不计入</p>
         </div>
         <n-radio-group v-model:value="days" size="small">
+          <n-radio-button :value="0">今日</n-radio-button>
           <n-radio-button :value="7">7 天</n-radio-button>
           <n-radio-button :value="30">30 天</n-radio-button>
           <n-radio-button :value="90">90 天</n-radio-button>
         </n-radio-group>
       </section>
 
-      <!-- 概况 -->
+      <!-- 概况：三张卡，全部跟随上方所选范围 -->
       <section class="stat-grid">
         <div class="stat-card" style="--accent: #18a058">
           <span class="stat-ico" v-html="STAT_ICONS.eye"></span>
-          <p class="stat-label">今日访问量</p>
-          <p class="stat-num">{{ summary.todayPV }}</p>
-          <p class="stat-hint">PV · 今天</p>
+          <p class="stat-label">浏览量（PV）</p>
+          <p class="stat-num">{{ summary.pv }}</p>
+          <p class="stat-hint">{{ rangeLabel }}</p>
         </div>
         <div class="stat-card" style="--accent: #5b8def">
           <span class="stat-ico" v-html="STAT_ICONS.user"></span>
-          <p class="stat-label">今日访客数</p>
-          <p class="stat-num">{{ summary.todayUV }}</p>
-          <p class="stat-hint">UV · 去重</p>
+          <p class="stat-label">访客数（UV）</p>
+          <p class="stat-num">{{ summary.uv }}</p>
+          <p class="stat-hint">{{ rangeLabel }}</p>
         </div>
-        <div class="stat-card" style="--accent: #f2994a">
-          <span class="stat-ico" v-html="STAT_ICONS.chart"></span>
-          <p class="stat-label">近 {{ days }} 天访问量</p>
-          <p class="stat-num">{{ summary.rangePV }}</p>
-          <p class="stat-hint">PV · 区间累计</p>
-        </div>
-        <div class="stat-card" style="--accent: #9b6dff">
-          <span class="stat-ico" v-html="STAT_ICONS.users"></span>
-          <p class="stat-label">近 {{ days }} 天访客数</p>
-          <p class="stat-num">{{ summary.rangeUV }}</p>
-          <p class="stat-hint">UV · 区间去重</p>
+        <div class="stat-card" style="--accent: #00a6a6">
+          <span class="stat-ico" v-html="STAT_ICONS.ip"></span>
+          <p class="stat-label">IP 数</p>
+          <p class="stat-num">{{ summary.ip }}</p>
+          <p class="stat-hint">{{ rangeLabel }}</p>
         </div>
       </section>
+      <p class="stat-note">
+        「IP 数」是<strong>访问过站点</strong>的去重 IP 数，与下方「登录 IP」列表不是同一份数据（后者只记录登录成功的来源 IP）。
+      </p>
 
       <!-- 趋势 -->
       <section class="card">
-        <div class="card-head"><span class="bar"></span><h3>访问趋势</h3><span class="card-sub">PV / UV</span></div>
-        <div v-if="daily.length" class="trend">
+        <div class="card-head"><span class="bar"></span><h3>访问趋势</h3><span class="card-sub">{{ trendUnit }} PV / UV</span></div>
+        <div v-if="series.length" class="trend">
           <div
-            v-for="(d, i) in daily"
-            :key="d.date"
+            v-for="(d, i) in series"
+            :key="d.label"
             class="trend-col"
-            :title="`${d.date}  PV ${d.pv} / UV ${d.uv}`"
+            :title="`${d.label}  PV ${d.pv} / UV ${d.uv}`"
           >
             <div class="trend-bars">
               <div class="trend-bar pv" :style="{ height: barPct(d.pv) + '%' }"></div>
               <div class="trend-bar uv" :style="{ height: barPct(d.uv) + '%' }"></div>
             </div>
-            <span class="trend-x">{{ showLabel(i) ? d.date.slice(5) : '' }}</span>
+            <span class="trend-x">{{ showLabel(i) ? (days === 0 ? d.label : d.label.slice(5)) : '' }}</span>
           </div>
         </div>
         <n-empty v-else description="暂无访问数据" :show-icon="false" class="card-empty" />
@@ -165,15 +166,10 @@ function showLabel(i: number) {
   margin: 0;
   color: var(--text-1);
 }
-.hero-sub {
-  font-size: 13px;
-  color: var(--text-2);
-  margin: 6px 0 0;
-}
 /* 概况卡（沿用 Dashboard 视觉） */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 14px;
   margin-bottom: 16px;
 }
@@ -230,6 +226,12 @@ function showLabel(i: number) {
   font-size: 12px;
   color: var(--text-3);
   margin: 4px 0 0;
+}
+.stat-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+  margin: -6px 0 16px;
 }
 /* 通用卡片 */
 .card {

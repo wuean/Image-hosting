@@ -26,7 +26,8 @@ const form = ref({
   smtp_user: '',
   smtp_pass: '',
   smtp_from: '',
-  smtp_secure: true
+  smtp_secure: true,
+  analytics_snippet: ''
 })
 const loading = ref(false)
 const saving = ref(false)
@@ -50,6 +51,7 @@ async function load() {
       form.value.smtp_pass = s.smtp_pass || ''
       form.value.smtp_from = s.smtp_from || ''
       form.value.smtp_secure = s.smtp_secure !== 'false'
+      form.value.analytics_snippet = s.analytics_snippet || ''
     }
   } catch (e: any) {
     message.error(e.message)
@@ -72,7 +74,8 @@ async function save() {
       smtp_user: form.value.smtp_user.trim(),
       smtp_pass: form.value.smtp_pass,
       smtp_from: form.value.smtp_from.trim(),
-      smtp_secure: form.value.smtp_secure ? 'true' : 'false'
+      smtp_secure: form.value.smtp_secure ? 'true' : 'false',
+      analytics_snippet: form.value.analytics_snippet
     })
     message.success('系统设置已保存')
     await load()
@@ -234,6 +237,35 @@ onMounted(load)
         </div>
       </n-card>
     </div>
+
+    <!-- 第三排：第三方统计代码 -->
+    <n-card class="settings-card" title="第三方统计" :bordered="false" style="margin-top: 16px">
+      <template #header-extra>
+        <span style="font-size: 12px; color: var(--text-3)">粘贴统计平台提供的代码片段，将注入所有站点页面（含登录页）</span>
+      </template>
+
+      <n-form label-placement="top">
+        <n-form-item label="统计代码（HTML / script 片段）">
+          <n-input
+            v-model:value="form.analytics_snippet"
+            type="textarea"
+            :autosize="{ minRows: 6, maxRows: 14 }"
+            placeholder="例如 Umami / Plausible / 百度统计 提供的统计代码，直接粘贴即可"
+          />
+          <template #feedback>
+            <span style="color: var(--text-3)">
+              代码原样注入到前端页面，留空则不启用。第三方平台的数据请在对方后台查看；本站内置的「访问统计」为独立体系，二者互不影响。
+            </span>
+          </template>
+        </n-form-item>
+        <n-form-item>
+          <n-space>
+            <n-button type="primary" :loading="saving" @click="save">保存设置</n-button>
+            <n-button @click="load">重置</n-button>
+          </n-space>
+        </n-form-item>
+      </n-form>
+    </n-card>
   </div>
 </template>
 

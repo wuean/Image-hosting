@@ -18,7 +18,8 @@
 - **存储桶导入导出**：可将当前用户的全部桶配置（含密钥明文）一键导出为 JSON 文件，用于备份或跨实例迁移；也能从 JSON 文件批量导入——同名桶更新配置、新桶创建，密钥重新加密入库。
 - **上传前处理（4 组独立开关）**：图片压缩（质量 + 最长边限制）、自动转格式（WebP / JPEG / PNG，默认 WebP）、重命名（时间戳 / 随机 / 自定义前缀，默认时间戳）、加水印，四者互不耦合、可任意组合；前三组参数记在浏览器本地，刷新后保持上次选择。
 - **图片水印**：前端 Canvas 合成，文字、九宫格位置、平铺、不透明度、字号（图宽百分比）、颜色、旋转均可调；全局一套配置，管理员在「图床设置 → 水印设置」维护，带实时预览。
-- **站点访问统计**：内置轻量统计（零第三方依赖），记录站点页面 PV/UV、外部来源与登录 IP，管理员在「访问统计」页查看，支持 7 / 30 / 90 天切换。仅统计站点页面访问，图片外链直连对象存储不计入。
+- **站点访问统计**：内置轻量统计（零第三方依赖），管理员在「访问统计」页查看浏览量（PV）、访客数（UV）、IP 数与趋势、外部来源、登录 IP；顶部可在今日 / 7 / 30 / 90 天间切换，页面所有内容跟随所选范围。其中「IP 数」指**访问过站点的去重 IP**，与下方「登录 IP」列表不是同一份数据。
+- **第三方统计代码**：可在「系统设置 → 第三方统计」粘贴 Umami / Plausible / 百度统计等平台的代码片段，保存后注入所有站点页面（含登录页），数据在对方后台查看。
 
 ## 技术栈
 
@@ -208,10 +209,11 @@ cd ../server && npm run start   # 后端静态托管 dist/，访问 http://local
 
 ## 系统设置（后台）
 
-管理员进入「系统设置」（侧边栏）→「邮件服务 (SMTP)」与「系统设置」两个区块：
+管理员进入「系统设置」（侧边栏）→「系统设置」「邮件服务 (SMTP)」「第三方统计」三个区块：
 
 - **系统设置**：站点名称、LOGO 文字、LOGO 图片 URL、登录背景图（留空则使用默认壁纸）。
 - **邮件服务 (SMTP)**：服务器、端口、加密开关、用户名、密码（点击显示）、发件人，以及「发送测试邮件」按钮。
+- **第三方统计**：粘贴第三方统计平台（Umami / Plausible / 百度统计等）提供的代码片段，保存后原样注入到所有站点页面（含登录页），留空则不启用；代码中的 `<script>` 会被重建为真实节点以正常执行。
 - SMTP 密码以 AES 加密存入数据库；公开接口不返回任何 SMTP 字段，仅管理员专用接口返回解密后的值供表单回填。
 
 ## API 概览
@@ -265,15 +267,15 @@ cd ../server && npm run start   # 后端静态托管 dist/，访问 http://local
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/analytics/track` | **公开**：上报一次页面访问（`{ path, referer }`），用于 PV/UV 统计 |
-| GET  | `/api/analytics?days=` | 管理员：概况 PV/UV、按天趋势、外部来源 Top、登录 IP 列表（`days` 默认 30，上限 365） |
+| GET  | `/api/analytics?days=` | 管理员：概况 PV / UV / 去重 IP 数、趋势序列（今日按小时、其余按天）、外部来源 Top、登录 IP 列表；`days` ∈ 0（今日）/ 7 / 30 / 90，默认 30 |
 
 ### 系统设置 `/api/settings`
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET  | `/api/settings` | 公开返回 branding（site_name / logo_text / logo_url / login_bg_url）与水印配置 `watermark` |
+| GET  | `/api/settings` | 公开返回 branding（site_name / logo_text / logo_url / login_bg_url）、水印配置 `watermark` 与第三方统计代码 `analytics_snippet` |
 | GET  | `/api/settings/all` | 管理员：返回全部含 SMTP（解密密码） |
-| PUT  | `/api/settings` | 管理员：保存设置（含 SMTP 与水印 `watermark`） |
+| PUT  | `/api/settings` | 管理员：保存设置（含 SMTP、水印 `watermark`、第三方统计 `analytics_snippet`） |
 | POST | `/api/settings/test-smtp` | 管理员：发送测试邮件 |
 
 ## 数据模型
@@ -283,8 +285,8 @@ SQLite，单文件 `server/data/imgbed.db`。核心表：
 - **users**：`id, username, password_hash, role, created_at, email, is_active, activation_token, activated_at`
 - **buckets**：`id, name, type, config_enc（AES 加密的 JSON 配置）, key_prefix, owner_id, created_at`
 - **images**：`id, bucket_id, user_id, key, original_name, size, mime, created_at`
-- **settings**：`key, value, updated_at`（site_name / logo_* / login_bg_url / smtp_* / watermark）
-- **page_views**：`id, path, referer, visitor, created_at`（站点访问统计；`visitor` 为 `sha256(ip|ua|密钥)`，不存原始 IP）
+- **settings**：`key, value, updated_at`（site_name / logo_* / login_bg_url / smtp_* / watermark / analytics_snippet）
+- **page_views**：`id, path, referer, visitor, ip_hash, created_at`（站点访问统计；`visitor = sha256(ip|ua|密钥)` 用于 UV 去重，`ip_hash = sha256(ip|密钥)` 用于去重 IP 数，均不存原始 IP）
 - **login_logs**：`id, user_id, username, ip, ua, created_at`（登录成功记录，供「登录 IP」列表展示）
 
 桶配置与 SMTP 密码均以 **AES-256-GCM**（主密钥 `MASTER_KEY`）加密存储，明文不下发前端。
